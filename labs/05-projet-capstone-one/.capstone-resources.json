@@ -1,4 +1,6 @@
 {
   "bucketName": "my-capstone-project-bucket-vscode-mm0mhxve",
-  "tableName": "my-capstone-project-table-vscode-mm0mhxve"
+  "tableName": "my-capstone-project-table-vscode-mm0mhxve",
+  "apiId": "r6qpo8hx9c",
+  "apiUrl": "https://r6qpo8hx9c.execute-api.eu-west-1.amazonaws.com/dev"
 }
