@@ -51,6 +51,7 @@ type ApiGatewayDetails = {
 };
 
 type DynamoDbRawItem = Record<string, AttributeValue>;
+type DeployScriptError = Error & { reason?: string };
 
 /**
  * Orchestration complète du déploiement.
@@ -60,11 +61,10 @@ async function deploy() {
   try {
     console.log('🚀 Starting Project Deployment...');
 
-    const resources = loadOrCreateResourceState();
+    let resources = loadOrCreateResourceState();
+    resources = await ensureBucketIsUsable(resources);
     console.log(`📌 Bucket: ${resources.bucketName}`);
     console.log(`📌 Table: ${resources.tableName}`);
-
-    await createBucket(resources.bucketName);
     console.log(`✅ S3 Bucket "${resources.bucketName}" ready.`);
 
     const shipItems = loadShipItems('./data/ships.json');
@@ -137,6 +137,62 @@ function saveResourceState(state: ResourceState): void {
   console.log(`📝 Resource state saved to ${RESOURCE_STATE_FILE}`);
 }
 
+function buildBucketName(): string {
+  return `my-capstone-project-bucket-${buildSuffix()}-${Math.random().toString(36).slice(2, 6)}`.slice(0, 63);
+}
+
+/**
+ * Rend le déploiement autonome.
+ * Si le bucket mémorisé n'est pas accessible, on régénère un nom et on continue.
+ */
+async function ensureBucketIsUsable(initialState: ResourceState): Promise<ResourceState> {
+  const bucketLockedByEnv = Boolean(process.env['CAPSTONE_BUCKET_NAME']);
+  const maxRegenerationAttempts = 3;
+  let currentState = { ...initialState };
+
+  for (let attempt = 0; attempt <= maxRegenerationAttempts; attempt++) {
+    try {
+      await createBucket(currentState.bucketName);
+      return currentState;
+    } catch (error: unknown) {
+      if (bucketLockedByEnv || !isRecoverableBucketError(error) || attempt === maxRegenerationAttempts) {
+        throw error;
+      }
+
+      const nextBucketName = buildBucketName();
+      console.log(
+        `⚠️  Bucket "${currentState.bucketName}" is not usable. Regenerating bucket name to "${nextBucketName}"...`
+      );
+      currentState = {
+        ...currentState,
+        bucketName: nextBucketName,
+      };
+      saveResourceState(currentState);
+    }
+  }
+
+  return currentState;
+}
+
+function isRecoverableBucketError(error: unknown): boolean {
+  const typedError = error as DeployScriptError & {
+    name?: string;
+    Code?: string;
+    $metadata?: { httpStatusCode?: number };
+  };
+
+  if (typedError.reason === 'BUCKET_NOT_USABLE') {
+    return true;
+  }
+
+  return (
+    typedError.Code === 'OperationAborted' ||
+    typedError.name === 'OperationAborted' ||
+    typedError.$metadata?.httpStatusCode === 403 ||
+    typedError.$metadata?.httpStatusCode === 409
+  );
+}
+
 /**
  * Génère un suffixe stable pour éviter les collisions de noms AWS.
  */
@@ -194,10 +250,11 @@ async function createBucket(bucketName: string): Promise<void> {
         }
       }
     } else if (typedError.$metadata?.httpStatusCode === 403) {
-      throw new Error(
-        `Access denied on bucket "${bucketName}". This name is likely already used in another account or your session cannot access it. ` +
-          'Delete .capstone-resources.json and redeploy with a unique CAPSTONE_SUFFIX.'
+      const bucketError: DeployScriptError = new Error(
+        `Access denied on bucket "${bucketName}".`
       );
+      bucketError.reason = 'BUCKET_NOT_USABLE';
+      throw bucketError;
     } else {
       throw error;
     }
