@@ -1,250 +1,143 @@
-# Projet Capstone One - Architecture API Gateway + DynamoDB + S3
+# Projet Capstone One
 
-## Objectifs d'apprentissage
+Ce projet déploie une API REST sur API Gateway qui lit des données de bateaux dans DynamoDB et récupère leurs photos depuis S3.
 
-À la fin de ce projet, vous serez capable de :
+Le déploiement et la suppression des ressources sont faits en TypeScript avec le SDK AWS v3.
 
-- Concevoir et implémenter une architecture serverless complète
-- Intégrer API Gateway avec DynamoDB et S3
-- Gérer l'authentification et les autorisations
-- Implémenter des opérations CRUD complètes
-- Gérer le stockage de fichiers avec S3
-- Appliquer les bonnes pratiques de sécurité AWS
+## Vue d'ensemble
 
-## Prérequis
-
-- Avoir complété les labs 01 (EC2), 02 (S3), 03 (API Gateway), et 04 (DynamoDB)
-- Maîtriser TypeScript et le SDK AWS v3
-- Comprendre les concepts REST API
-- Session AWS SSO active avec le profil `aws-labs`
-
-## Durée estimée
-
-**1 demi-journée** (4 heures)
-
-## Architecture cible
+Architecture visée
 
 ![Architecture Diagram](./diagrams/target-architecture.png)
 
-Consultez le diagramme d'architecture disponible dans le dossier `/diagrams` pour comprendre l'architecture cible à implémenter.
+Ressources créées
 
-## API Endpoints à implémenter
+- un bucket S3 pour les images
+- une table DynamoDB pour les profils de bateaux
+- une API Gateway REST avec les routes de consultation
+- un stage `dev` pour exposer l’API
 
-Votre API doit exposer les endpoints suivants :
+## Contrat API
 
-### 1. GET /ships/photo/{key}
+### `GET /ships`
 
-- **Description** : Retourne la photo de profil du bateau depuis S3
-- **Paramètre** : `key` - Identifiant unique de la photo
-- **Réponse** : Image du bateau
+Retourne la liste des bateaux depuis DynamoDB.
 
-### 2. GET /ships/profile/{key}
+Exemple de réponse
 
-- **Description** : Retourne les données du profil du bateau depuis DynamoDB
-- **Paramètre** : `key` - Identifiant unique du bateau
-- **Réponse** : Objet JSON avec les informations du bateau
-
-### 3. GET /ships
-
-- **Description** : Retourne la liste de tous les bateaux depuis DynamoDB
-- **Réponse** : Array JSON avec la liste des bateaux
-
-## Services AWS et Rôles IAM
-
-### Services AWS utilisés
-
-- **API Gateway** : Point d'entrée REST API
-- **DynamoDB** : Base de données NoSQL pour les métadonnées
-- **S3** : Stockage des fichiers
-- **IAM** : Gestion des permissions
-
-### Rôles IAM requis
-
-Votre API Gateway nécessite deux rôles d'exécution spécifiques :
-
-#### 1. APIGatewayDynamoDBServiceRole
-
-- **Usage** : Rôle d'exécution pour les ressources/méthodes qui interrogent DynamoDB
-- **Permissions** : Accès en lecture/écriture à DynamoDB
-- **Endpoints concernés** : `GET /ships/profile/{key}` et `GET /ships`
-
-#### 2. APIGatewayS3ServiceRole
-
-- **Usage** : Rôle d'exécution pour les ressources/méthodes qui interrogent S3
-- **Permissions** : Accès en lecture aux objets S3
-- **Endpoints concernés** : `GET /ships/photo/{key}`
-
-#### Récupération des ARN des rôles avec AWS CLI
-
-Pour obtenir l'ARN d'un rôle IAM, utilisez les commandes suivantes :
-
-Vous en aurez besoin pour obtenir les rôles à configurer dans API Gateway, comme dans le lab 03.
-
-```bash
-# Récupérer l'ARN du rôle DynamoDB
-aws iam get-role --role-name APIGatewayDynamoDBServiceRole --query 'Role.Arn' --output text --profile aws-labs
-
-# Récupérer l'ARN du rôle S3
-aws iam get-role --role-name APIGatewayS3ServiceRole --query 'Role.Arn' --output text --profile aws-labs
+```json
+{
+  "ships": [
+    {
+      "id": "B-001",
+      "nom": "Le Vigilant",
+      "type": "Pêcheur",
+      "pavillon": "France",
+      "taille": "12.5",
+      "nombre_marins": "4",
+      "s3_image_key": "pecheur-b-001.jpg"
+    }
+  ]
+}
 ```
 
-## Exigences techniques
+### `GET /ships/profile/{key}`
 
-### ✅ Configuration CORS
+Retourne le profil d’un bateau depuis DynamoDB.
 
-- CORS doit être configuré pour permettre les requêtes depuis l'interface web
+Exemple
 
-### ✅ Déploiement automatisé
+`GET /ships/profile/B-001`
 
-- Le projet doit être déployable avec la commande :
+### `GET /ships/photo/{key}`
 
-```bash
-npx ts-node src/deploy-project.ts
-```
+Retourne l’image du bateau depuis S3.
 
-### ✅ Interface de test fonctionnelle
+Exemple
 
-- L'API doit fonctionner depuis la page web `checker/index.html`
-- Utilisez Live Server pour tester l'interface
+`GET /ships/photo/pecheur-b-001.jpg`
 
-### ✅ Destruction automatisée
+## Correspondance obligatoire entre données et fichiers
 
-- Le projet doit être destructible avec la commande :
+Le champ `s3_image_key` de `data/ships.json` doit correspondre exactement à un fichier présent dans `assets`.
 
-```bash
-npx ts-node src/destroy-project.ts
-```
-
-## Ressources disponibles
-
-### Template de départ
-
-- Le template de base est disponible dans `labs/05-project-capstone-one`
-
-### Images des bateaux
-
-- Les images sont disponibles dans le dossier `labs/05-project-capstone-one/assets`
-
-### Format des données
-
-- Le format de la table DynamoDB et les données d'exemple sont disponibles dans `labs/05-project-capstone-one/data`
-
-## Correspondance obligatoire DynamoDB <-> S3
-
-Chaque item de `data/ships.json` contient `s3_image_key`.
-Cette valeur doit être exactement le nom du fichier présent dans `assets/`.
-
-Correspondance actuelle attendue :
+Correspondance actuelle
 
 - `B-001` -> `pecheur-b-001.jpg`
 - `B-002` -> `tanker-b-002.jpg`
 
-Important :
+Le script de déploiement vérifie cette correspondance avant d’envoyer les fichiers dans S3 et avant d’insérer les items dans DynamoDB.
 
-- Si un `s3_image_key` ne correspond à aucun fichier dans `assets/`, le déploiement doit échouer.
-- Le script `src/deploy-project.ts` vérifie maintenant cette correspondance avant l'upload S3 et avant l'insertion DynamoDB.
+## Prérequis
 
-## Grille de notation
+- session AWS SSO active
+- droits suffisants pour S3, DynamoDB, API Gateway et IAM
+- Node.js et npm
 
-| Critère                                                                | Points |
-| ---------------------------------------------------------------------- | ------ |
-| Création et Remplissage du Bucket S3                                   | 2      |
-| Création de la Table DynamoDB                                          | 1      |
-| Insertion des Items dans DynamoDB                                      | 3      |
-| Suppression d'un Item dans DynamoDB                                    | 2      |
-| Fonction spécifique pour supprimer toutes les ressources               | 2      |
-| Qualité du code (Diagramme d'architecture, Commentaires, clarté, logs) | 5      |
-| Intégration avec API Gateway pour S3                                   | 1      |
-| Intégration avec API Gateway pour DynamoDB                             | 4      |
-| **Total**                                                              | **20** |
+Rôles IAM attendus pour les intégrations API Gateway
 
-## Instructions étape par étape
+- `APIGatewayDynamoDBServiceRole`
+- `APIGatewayS3ServiceRole`
 
-### Étape 1 : Configuration de l'environnement
-
-1. Vérifiez votre configuration AWS :
-
-```bash
-npm run validate-setup
-```
-
-2. Installez les dépendances :
+## Installation
 
 ```bash
 cd labs/05-projet-capstone-one
 npm install
 ```
 
-### Étape 2 : Analyse des ressources
-
-1. Examinez le diagramme d'architecture dans `./diagrams/target-architecture.png`
-2. Consultez les données d'exemple dans `./data/ships.json`
-3. Explorez les images disponibles dans `./assets/`
-4. Testez l'interface web dans `./checker/index.html`
-
-### Étape 3 : Implémentation
-
-1. **Implémentez le script de déploiement** (`src/deploy-project.ts`) :
-   - Création du bucket S3
-   - Upload des images depuis `./assets/`
-   - Création de la table DynamoDB
-   - Insertion des données depuis `./data/ships.json`
-   - Configuration d'API Gateway avec CORS
-   - Création des endpoints requis
-
-2. **Implémentez le script de destruction** (`src/destroy-project.ts`) :
-   - Suppression de tous les items DynamoDB
-   - Suppression de la table DynamoDB
-   - Vidage et suppression du bucket S3
-   - Suppression de l'API Gateway
-
-### Étape 4 : Test et validation
-
-1. Déployez votre projet :
+## Déployer
 
 ```bash
 npx ts-node src/deploy-project.ts
 ```
 
-2. Testez l'API avec l'interface web :
-   - Ouvrez `checker/index.html` avec Live Server
-   - Vérifiez que tous les endpoints fonctionnent
+Le script crée les ressources, configure CORS, déploie l’API sur le stage `dev` puis affiche l’URL finale.
 
-3. Nettoyez les ressources :
+Un fichier `.capstone-resources.json` est maintenu automatiquement pour mémoriser les noms de ressources et l’identifiant API.
+
+## Tester dans l’interface web
+
+Ouvrir `checker/index.html` avec Live Server puis renseigner l’URL API affichée pendant le déploiement.
+
+## Détruire
 
 ```bash
 npx ts-node src/destroy-project.ts
 ```
 
-## Bonnes pratiques à respecter
+Le script supprime la table, le bucket et l’API Gateway puis met à jour l’état local.
 
-- **Sécurité** : Utilisez les rôles IAM appropriés
-- **Nommage** : Suivez les conventions de nommage AWS
-- **Logging** : Ajoutez des logs détaillés pour le debugging
-- **Gestion d'erreurs** : Implémentez une gestion d'erreurs robuste
-- **Documentation** : Commentez votre code de manière claire
-- **Tags** : Appliquez les tags requis selon les standards du projet
+## Variables d’environnement utiles
 
-## Troubleshooting
+- `CAPSTONE_BUCKET_NAME` pour imposer le nom du bucket
+- `CAPSTONE_TABLE_NAME` pour imposer le nom de la table
+- `CAPSTONE_SUFFIX` pour suffixer les noms générés automatiquement
+- `CAPSTONE_API_ID` pour forcer la suppression d’une API précise au destroy
+- `AWS_ACCOUNT_ID` pour éviter la détection automatique du compte
 
-### Problèmes courants
+## Dépannage
 
-1. **Erreur CORS** : Vérifiez la configuration CORS d'API Gateway
-2. **Permissions IAM** : Assurez-vous que les rôles APIGatewayDynamoDBServiceRole et APIGatewayS3ServiceRole ont les bonnes permissions
-3. **Timeout** : Augmentez les timeouts si nécessaire pour les opérations S3/DynamoDB
-4. **Noms de ressources** : Utilisez des noms uniques pour éviter les conflits
+### Les photos ne s’affichent pas
 
-### Validation
+- vérifier la correspondance `s3_image_key` dans `data/ships.json`
+- vérifier la présence réelle des fichiers dans `assets`
+- vérifier les permissions du rôle `APIGatewayS3ServiceRole`
 
-- Tous les tests doivent passer
-- L'interface web doit fonctionner sans erreurs
-- Les ressources doivent être correctement nettoyées après destruction
+### Erreur CORS dans le navigateur
 
-## Livrables
+- relancer le déploiement pour recréer une API propre
+- vérifier que l’URL utilisée pointe bien vers le stage `dev`
 
-1. Code source complet et fonctionnel
-2. Scripts de déploiement et destruction opérationnels
-3. Documentation claire dans le code
-4. Validation que l'interface web fonctionne correctement
+### Erreur d’accès AWS
 
-Bonne chance ! 🚢
+- relancer la connexion SSO
+- vérifier l’identité active avec `aws sts get-caller-identity`
+
+## Fichiers importants
+
+- `src/deploy-project.ts` orchestration du déploiement
+- `src/destroy-project.ts` suppression des ressources
+- `data/ships.json` dataset DynamoDB
+- `assets/` images utilisées par l’API
+- `checker/index.html` page de vérification fonctionnelle

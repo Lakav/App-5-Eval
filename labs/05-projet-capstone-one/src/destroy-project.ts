@@ -24,6 +24,9 @@ type ResourceState = {
   apiUrl?: string;
 };
 
+/**
+ * Orchestration de la suppression complète.
+ */
 async function main() {
   try {
     console.log('🚀 Starting Project Deletion...');
@@ -53,6 +56,10 @@ async function main() {
   }
 }
 
+/**
+ * Résout les noms de ressources à supprimer.
+ * Priorité aux variables d'environnement, sinon état local.
+ */
 function loadResourceState(): ResourceState {
   const state = readResourceState();
   const envBucket = process.env['CAPSTONE_BUCKET_NAME'];
@@ -82,6 +89,9 @@ function loadResourceState(): ResourceState {
   return resolvedState;
 }
 
+/**
+ * Lit l'état local si disponible.
+ */
 function readResourceState(): Partial<ResourceState> {
   if (!existsSync(RESOURCE_STATE_FILE)) {
     return {};
@@ -90,6 +100,9 @@ function readResourceState(): Partial<ResourceState> {
   return JSON.parse(readFileSync(RESOURCE_STATE_FILE, 'utf-8')) as Partial<ResourceState>;
 }
 
+/**
+ * Nettoie les références API dans l'état local après suppression.
+ */
 function clearApiFromState(resources: ResourceState): void {
   const nextState: ResourceState = {
     bucketName: resources.bucketName,
@@ -99,6 +112,9 @@ function clearApiFromState(resources: ResourceState): void {
   writeFileSync(RESOURCE_STATE_FILE, JSON.stringify(nextState, null, 2));
 }
 
+/**
+ * Supprime les objets d'abord, puis le bucket.
+ */
 async function deleteBucketAndObjects(bucketName: string): Promise<void> {
   try {
     await s3Client.send(new HeadBucketCommand({ Bucket: bucketName }));
@@ -133,6 +149,9 @@ async function deleteBucketAndObjects(bucketName: string): Promise<void> {
   console.log(`✅ Bucket "${bucketName}" deleted.`);
 }
 
+/**
+ * Supprime la table des profils.
+ */
 async function deleteDynamoDBTable(tableName: string): Promise<void> {
   try {
     await dynamoDBClient.send(new DeleteTableCommand({ TableName: tableName }));
@@ -148,6 +167,9 @@ async function deleteDynamoDBTable(tableName: string): Promise<void> {
   }
 }
 
+/**
+ * Supprime l'API REST.
+ */
 async function deleteApiGateway(apiId: string): Promise<void> {
   try {
     await apiGatewayClient.send(new DeleteRestApiCommand({ restApiId: apiId }));

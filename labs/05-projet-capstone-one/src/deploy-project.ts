@@ -53,6 +53,10 @@ type ApiGatewayDetails = {
 
 type DynamoDbRawItem = Record<string, AttributeValue>;
 
+/**
+ * Orchestration complète du déploiement.
+ * On garde un ordre strict: stockage, données, puis exposition API.
+ */
 async function deploy() {
   try {
     console.log('🚀 Starting Project Deployment...');
@@ -114,6 +118,10 @@ function loadOrCreateResourceState(): ResourceState {
   return state;
 }
 
+/**
+ * Lit l'état local des ressources déjà créées.
+ * Ce fichier permet de relancer les scripts sans perdre la référence API.
+ */
 function readResourceState(): Partial<ResourceState> {
   if (!existsSync(RESOURCE_STATE_FILE)) {
     return {};
@@ -122,11 +130,17 @@ function readResourceState(): Partial<ResourceState> {
   return JSON.parse(readFileSync(RESOURCE_STATE_FILE, 'utf-8')) as Partial<ResourceState>;
 }
 
+/**
+ * Persiste l'état courant pour les prochaines exécutions.
+ */
 function saveResourceState(state: ResourceState): void {
   writeFileSync(RESOURCE_STATE_FILE, JSON.stringify(state, null, 2));
   console.log(`📝 Resource state saved to ${RESOURCE_STATE_FILE}`);
 }
 
+/**
+ * Génère un suffixe stable pour éviter les collisions de noms AWS.
+ */
 function buildSuffix(): string {
   const customSuffix = process.env['CAPSTONE_SUFFIX'];
   const rawSuffix = customSuffix || `${process.env['USER'] || 'student'}-${Date.now().toString(36)}`;
@@ -139,6 +153,10 @@ function buildSuffix(): string {
     .slice(0, 20);
 }
 
+/**
+ * Crée le bucket si nécessaire.
+ * Certains retours 409 S3 sont transitoires, donc on applique un retry simple.
+ */
 async function createBucket(bucketName: string): Promise<void> {
   try {
     await s3Client.send(new HeadBucketCommand({ Bucket: bucketName }));
@@ -182,6 +200,9 @@ async function createBucket(bucketName: string): Promise<void> {
   }
 }
 
+/**
+ * Demande explicite lors d'un écrasement d'image.
+ */
 async function askUserConfirmation(question: string): Promise<boolean> {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
@@ -193,6 +214,9 @@ async function askUserConfirmation(question: string): Promise<boolean> {
   });
 }
 
+/**
+ * Upload une image en conservant son nom de fichier comme clé S3.
+ */
 async function uploadJpg(bucketName: string, key: string, filePath: string): Promise<void> {
   try {
     await s3Client.send(new HeadObjectCommand({ Bucket: bucketName, Key: key }));
@@ -223,6 +247,9 @@ async function uploadJpg(bucketName: string, key: string, filePath: string): Pro
   );
 }
 
+/**
+ * Parcourt le dossier assets et envoie chaque image.
+ */
 async function uploadAssets(bucketName: string, folderPath: string): Promise<void> {
   const filePaths = readdirSync(folderPath).map((file) => join(folderPath, file));
   console.log(`📂 Found ${filePaths.length} file(s) to upload`);
@@ -234,6 +261,9 @@ async function uploadAssets(bucketName: string, folderPath: string): Promise<voi
   }
 }
 
+/**
+ * Crée la table de profils si elle n'existe pas déjà.
+ */
 async function createDynamoDBTable(tableName: string): Promise<void> {
   try {
     try {
@@ -265,6 +295,9 @@ async function createDynamoDBTable(tableName: string): Promise<void> {
   }
 }
 
+/**
+ * Insère les items du dataset dans DynamoDB.
+ */
 async function insertItems(tableName: string, items: DynamoDbRawItem[]): Promise<void> {
   try {
     console.log(`📝 Inserting ${items.length} item(s) into DynamoDB...`);
@@ -288,11 +321,18 @@ async function insertItems(tableName: string, items: DynamoDbRawItem[]): Promise
   }
 }
 
+/**
+ * Charge le dataset de référence des bateaux.
+ */
 function loadShipItems(jsonFilePath: string): DynamoDbRawItem[] {
   const fileContent = readFileSync(jsonFilePath, 'utf-8');
   return JSON.parse(fileContent) as DynamoDbRawItem[];
 }
 
+/**
+ * Vérifie que chaque s3_image_key du dataset correspond à un fichier réel.
+ * Si une image manque, on arrête immédiatement le déploiement.
+ */
 function validateShipImageKeyMapping(items: DynamoDbRawItem[], assetsFolderPath: string): void {
   const assetFiles = new Set(readdirSync(assetsFolderPath));
   const referencedKeys = new Set<string>();
@@ -328,6 +368,10 @@ function validateShipImageKeyMapping(items: DynamoDbRawItem[], assetsFolderPath:
   }
 }
 
+/**
+ * Recrée l'API Gateway pour éviter les configurations obsolètes.
+ * On repart toujours d'un état propre pour garder un comportement prévisible.
+ */
 async function createOrReuseApiGateway(resources: ResourceState): Promise<ApiGatewayDetails> {
   if (resources.apiId) {
     try {
@@ -393,6 +437,10 @@ async function createOrReuseApiGateway(resources: ResourceState): Promise<ApiGat
   };
 }
 
+/**
+ * Récupère l'account AWS courant, soit via variable d'environnement,
+ * soit via l'AWS CLI locale.
+ */
 function resolveAwsAccountId(): string {
   const envAccountId = process.env['AWS_ACCOUNT_ID'];
   if (envAccountId) {
@@ -410,10 +458,16 @@ function resolveAwsAccountId(): string {
   return output;
 }
 
+/**
+ * Construit l'URL publique de l'API.
+ */
 function buildApiUrl(apiId: string): string {
   return `https://${apiId}.execute-api.${AWS_REGION}.amazonaws.com/${API_STAGE_NAME}`;
 }
 
+/**
+ * Retourne l'identifiant de la racine `/` dans API Gateway.
+ */
 async function getRootResourceId(apiId: string): Promise<string> {
   const resources = await apiGatewayClient.send(new GetResourcesCommand({ restApiId: apiId, limit: 500 }));
   const root = resources.items?.find((item) => item.path === '/');
@@ -425,6 +479,9 @@ async function getRootResourceId(apiId: string): Promise<string> {
   return root.id;
 }
 
+/**
+ * Crée une ressource enfant dans l'arborescence API Gateway.
+ */
 async function createResource(apiId: string, parentId: string, pathPart: string): Promise<string> {
   const response = await apiGatewayClient.send(
     new CreateResourceCommand({
@@ -441,6 +498,9 @@ async function createResource(apiId: string, parentId: string, pathPart: string)
   return response.id;
 }
 
+/**
+ * Configure GET /ships vers DynamoDB Scan.
+ */
 async function configureGetShips(
   apiId: string,
   resourceId: string,
@@ -519,6 +579,9 @@ async function configureGetShips(
   );
 }
 
+/**
+ * Configure GET /ships/profile/{key} vers DynamoDB GetItem.
+ */
 async function configureGetShipProfile(
   apiId: string,
   resourceId: string,
@@ -601,6 +664,9 @@ async function configureGetShipProfile(
   );
 }
 
+/**
+ * Configure GET /ships/photo/{key} vers S3 GetObject.
+ */
 async function configureGetShipPhoto(
   apiId: string,
   resourceId: string,
@@ -668,6 +734,9 @@ async function configureGetShipPhoto(
   );
 }
 
+/**
+ * Ajoute une réponse CORS standard via méthode OPTIONS.
+ */
 async function configureOptionsMethod(apiId: string, resourceId: string, allowedMethods: string): Promise<void> {
   await apiGatewayClient.send(
     new PutMethodCommand({
