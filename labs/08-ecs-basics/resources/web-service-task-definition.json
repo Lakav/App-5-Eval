@@ -1,0 +1,68 @@
+{
+  "family": "ecs-web-app",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "256",
+  "memory": "512",
+  "executionRoleArn": "arn:aws:iam::ACCOUNT_ID:role/ecs-lab-task-execution-role",
+  "taskRoleArn": "arn:aws:iam::ACCOUNT_ID:role/ecs-lab-web-app-task-role",
+  "containerDefinitions": [
+    {
+      "name": "web-app",
+      "image": "<ECR_WEB_URI>",
+      "portMappings": [
+        {
+          "containerPort": 3000,
+          "protocol": "tcp"
+        }
+      ],
+      "essential": true,
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/ecs-lab/web-app",
+          "awslogs-region": "eu-west-1",
+          "awslogs-stream-prefix": "ecs"
+        }
+      },
+      "environment": [
+        {
+          "name": "NODE_ENV",
+          "value": "production"
+        },
+        {
+          "name": "PORT",
+          "value": "3000"
+        }
+      ],
+      "healthCheck": {
+        "command": [
+          "CMD-SHELL",
+          "wget --no-verbose --tries=1 --spider http://localhost:3000/health || exit 1"
+        ],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 60
+      }
+    }
+  ],
+  "tags": [
+    {
+      "key": "git-repository",
+      "value": "https://github.com/soraskills/develop-for-the-cloud-labs.git"
+    },
+    {
+      "key": "project",
+      "value": "ecs-lab"
+    },
+    {
+      "key": "environment",
+      "value": "development"
+    },
+    {
+      "key": "managed-by",
+      "value": "aws-cli"
+    }
+  ]
+}

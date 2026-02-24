@@ -1,0 +1,19 @@
+{
+  "name": "04-dynamodb-basics",
+  "version": "1.0.0",
+  "description": "DynamoDB basics lab for AWS learning",
+  "main": "src/dynamodb-operations.ts",
+  "scripts": {
+    "start": "npx ts-node src/dynamodb-operations.ts",
+    "build": "tsc",
+    "test": "jest"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.987.0"
+  },
+  "devDependencies": {
+    "@types/node": "^18.0.0",
+    "ts-node": "^10.0.0",
+    "typescript": "^4.0.0"
+  }
+}

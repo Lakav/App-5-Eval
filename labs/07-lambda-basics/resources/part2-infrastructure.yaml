@@ -1,0 +1,197 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Infrastructure pour Lambda Lab - Partie 2: DynamoDB Streams et Conteneur'
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: lambda-basics-part2
+    Description: Nom du projet pour les tags
+
+Resources:
+  # Table DynamoDB avec Stream activé
+  DemoTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-demo-table'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      Tags:
+        - Key: git-repository
+          Value: https://github.com/soraskills/develop-for-the-cloud-labs.git
+        - Key: project
+          Value: !Ref ProjectName
+        - Key: environment
+          Value: development
+        - Key: managed-by
+          Value: cloudformation
+
+  # Bucket S3 pour stocker l'historique
+  HistoryBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ProjectName}-history-${AWS::AccountId}-${AWS::Region}'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldHistoryFiles
+            Status: Enabled
+            ExpirationInDays: 30
+      Tags:
+        - Key: git-repository
+          Value: https://github.com/soraskills/develop-for-the-cloud-labs.git
+        - Key: project
+          Value: !Ref ProjectName
+        - Key: environment
+          Value: development
+        - Key: managed-by
+          Value: cloudformation
+
+  # Repository ECR pour l'image Docker
+  ECRRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub '${ProjectName}-lambda-container'
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Keep only the latest 5 images",
+                "selection": {
+                  "tagStatus": "any",
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 5
+                },
+                "action": {
+                  "type": "expire"
+                }
+              }
+            ]
+          }
+      Tags:
+        - Key: git-repository
+          Value: https://github.com/soraskills/develop-for-the-cloud-labs.git
+        - Key: project
+          Value: !Ref ProjectName
+        - Key: environment
+          Value: development
+        - Key: managed-by
+          Value: cloudformation
+
+  # Rôle IAM pour la fonction Lambda conteneur
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-lambda-container-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: DynamoDBStreamAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:DescribeStream
+                  - dynamodb:GetRecords
+                  - dynamodb:GetShardIterator
+                  - dynamodb:ListStreams
+                Resource: !GetAtt DemoTable.StreamArn
+        - PolicyName: S3WriteAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:PutObjectAcl
+                Resource: !Sub '${HistoryBucket.Arn}/*'
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                Resource: !GetAtt HistoryBucket.Arn
+      Tags:
+        - Key: git-repository
+          Value: https://github.com/soraskills/develop-for-the-cloud-labs.git
+        - Key: project
+          Value: !Ref ProjectName
+        - Key: environment
+          Value: development
+        - Key: managed-by
+          Value: cloudformation
+
+  # Log Group pour la fonction Lambda conteneur
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/dynamodb-stream-processor
+      RetentionInDays: 7
+      Tags:
+        - Key: git-repository
+          Value: https://github.com/soraskills/develop-for-the-cloud-labs.git
+        - Key: project
+          Value: !Ref ProjectName
+        - Key: environment
+          Value: development
+        - Key: managed-by
+          Value: cloudformation
+
+Outputs:
+  DynamoDBTableName:
+    Description: Nom de la table DynamoDB
+    Value: !Ref DemoTable
+    Export:
+      Name: !Sub '${AWS::StackName}-DynamoDBTableName'
+
+  DynamoDBStreamArn:
+    Description: ARN du stream DynamoDB
+    Value: !GetAtt DemoTable.StreamArn
+    Export:
+      Name: !Sub '${AWS::StackName}-DynamoDBStreamArn'
+
+  S3BucketName:
+    Description: Nom du bucket S3 pour l'historique
+    Value: !Ref HistoryBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-S3BucketName'
+
+  ECRRepositoryUri:
+    Description: URI du repository ECR
+    Value: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${ECRRepository}'
+    Export:
+      Name: !Sub '${AWS::StackName}-ECRRepositoryUri'
+
+  LambdaRoleArn:
+    Description: ARN du rôle IAM pour Lambda
+    Value: !GetAtt LambdaExecutionRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-LambdaRoleArn'
+
+  LogGroupName:
+    Description: Nom du groupe de logs CloudWatch
+    Value: !Ref LambdaLogGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-LogGroupName'

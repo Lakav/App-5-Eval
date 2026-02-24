@@ -1,0 +1,163 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Rôles IAM pour le lab ECS - Task Execution Role et Task Role'
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: 'ecs-lab'
+    Description: 'Nom du projet pour le tagging'
+
+Resources:
+  # Task Execution Role - Utilisé par ECS pour démarrer les tâches
+  ECSTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-task-execution-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: ECRAccessPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchGetImage
+                Resource: '*'
+        - PolicyName: CloudWatchLogsPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:DescribeLogStreams
+                Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/ecs/${ProjectName}/*'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-task-execution-role'
+        - Key: git-repository
+          Value: 'https://github.com/soraskills/develop-for-the-cloud-labs.git'
+        - Key: project
+          Value: !Ref ProjectName
+        - Key: environment
+          Value: 'development'
+        - Key: managed-by
+          Value: 'cloudformation'
+
+  # Task Role pour l'application web - Permissions minimales
+  WebAppTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-web-app-task-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CloudWatchMetricsPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    'cloudwatch:namespace': !Sub '${ProjectName}/WebApp'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-web-app-task-role'
+        - Key: git-repository
+          Value: 'https://github.com/soraskills/develop-for-the-cloud-labs.git'
+        - Key: project
+          Value: !Ref ProjectName
+        - Key: environment
+          Value: 'development'
+        - Key: managed-by
+          Value: 'cloudformation'
+
+  # Task Role pour le classificateur d'images - Accès S3
+  ImageClassifierTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-image-classifier-task-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: S3AccessPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource: !Sub 'arn:aws:s3:::${ProjectName}-images-${AWS::AccountId}-${AWS::Region}/*'
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                Resource: !Sub 'arn:aws:s3:::${ProjectName}-images-${AWS::AccountId}-${AWS::Region}'
+        - PolicyName: CloudWatchMetricsPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    'cloudwatch:namespace': !Sub '${ProjectName}/ImageClassifier'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-image-classifier-task-role'
+        - Key: git-repository
+          Value: 'https://github.com/soraskills/develop-for-the-cloud-labs.git'
+        - Key: project
+          Value: !Ref ProjectName
+        - Key: environment
+          Value: 'development'
+        - Key: managed-by
+          Value: 'cloudformation'
+
+Outputs:
+  ECSTaskExecutionRoleArn:
+    Description: 'ARN du rôle d execution des tâches ECS'
+    Value: !GetAtt ECSTaskExecutionRole.Arn
+    Export:
+      Name: !Sub '${ProjectName}-TaskExecutionRole-ARN'
+
+  WebAppTaskRoleArn:
+    Description: 'ARN du rôle de tâche pour l application web'
+    Value: !GetAtt WebAppTaskRole.Arn
+    Export:
+      Name: !Sub '${ProjectName}-WebAppTaskRole-ARN'
+
+  ImageClassifierTaskRoleArn:
+    Description: 'ARN du rôle de tâche pour le classificateur d images'
+    Value: !GetAtt ImageClassifierTaskRole.Arn
+    Export:
+      Name: !Sub '${ProjectName}-ImageClassifierTaskRole-ARN'

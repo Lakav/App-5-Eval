@@ -1,0 +1,20 @@
+[
+  {
+    "id": { "S": "B-001" },
+    "nom": { "S": "Le Vigilant" },
+    "type": { "S": "Pêcheur" },
+    "pavillon": { "S": "France" },
+    "taille": { "N": "12.5" },
+    "nombre_marins": { "N": "4" },
+    "s3_image_key": { "S": "pecheur-b-001.jpg" }
+  },
+  {
+    "id": { "S": "B-002" },
+    "nom": { "S": "Ocean Giant" },
+    "type": { "S": "Tanker" },
+    "pavillon": { "S": "Libéria" },
+    "taille": { "N": "330" },
+    "nombre_marins": { "N": "25" },
+    "s3_image_key": { "S": "tanker-b-002.jpg" }
+  }
+]

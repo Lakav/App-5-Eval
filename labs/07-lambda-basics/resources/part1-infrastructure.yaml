@@ -1,0 +1,113 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Infrastructure pour Lambda Lab - Partie 1: EventBridge et S3'
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: lambda-basics-part1
+    Description: Nom du projet pour les tags
+
+Resources:
+  # Bucket S3 pour stocker les fichiers de données
+  DataBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ProjectName}-data-${AWS::AccountId}-${AWS::Region}'
+      NotificationConfiguration:
+        EventBridgeConfiguration:
+          EventBridgeEnabled: true
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      Tags:
+        - Key: git-repository
+          Value: https://github.com/soraskills/develop-for-the-cloud-labs.git
+        - Key: project
+          Value: !Ref ProjectName
+        - Key: environment
+          Value: development
+        - Key: managed-by
+          Value: cloudformation
+
+  # Rôle IAM pour la fonction Lambda
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-lambda-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: S3ReadAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                Resource: !Sub '${DataBucket.Arn}/*'
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                Resource: !GetAtt DataBucket.Arn
+      Tags:
+        - Key: git-repository
+          Value: https://github.com/soraskills/develop-for-the-cloud-labs.git
+        - Key: project
+          Value: !Ref ProjectName
+        - Key: environment
+          Value: development
+        - Key: managed-by
+          Value: cloudformation
+
+  # Log Group pour la fonction Lambda
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/s3-file-processor
+      RetentionInDays: 7
+      Tags:
+        - Key: git-repository
+          Value: https://github.com/soraskills/develop-for-the-cloud-labs.git
+        - Key: project
+          Value: !Ref ProjectName
+        - Key: environment
+          Value: development
+        - Key: managed-by
+          Value: cloudformation
+
+Outputs:
+  S3BucketName:
+    Description: Nom du bucket S3 pour les données
+    Value: !Ref DataBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-S3BucketName'
+
+  S3BucketArn:
+    Description: ARN du bucket S3
+    Value: !GetAtt DataBucket.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-S3BucketArn'
+
+  LambdaRoleArn:
+    Description: ARN du rôle IAM pour Lambda
+    Value: !GetAtt LambdaExecutionRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-LambdaRoleArn'
+
+  LogGroupName:
+    Description: Nom du groupe de logs CloudWatch
+    Value: !Ref LambdaLogGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-LogGroupName'

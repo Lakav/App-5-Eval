@@ -1,0 +1,319 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'EC2 Lab - Basic instance deployment with CloudFormation'
+
+Parameters:
+  StudentName:
+    Type: String
+    Description: Student name for resource identification (will be suffixed with hash)
+    MinLength: 2
+    MaxLength: 20
+    AllowedPattern: ^[a-zA-Z][a-zA-Z0-9-]*$
+    ConstraintDescription: Must start with a letter and contain only letters, numbers, and hyphens
+
+  InstanceType:
+    Type: String
+    Description: EC2 instance type
+    Default: t2.micro
+    AllowedValues:
+      - t2.micro
+      - t2.small
+    ConstraintDescription: Must be a valid EC2 instance type
+  
+  LatestAmiId:
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64'
+    Description: "The latest AL2023 AMI ID retrieved from SSM."
+
+Resources:
+  # Security Group (using default VPC)
+  LabSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${StudentName}-ec2-lab-sg'
+      GroupDescription: !Sub 'Security group for ${StudentName} EC2 lab instance'
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8000
+          ToPort: 8000
+          CidrIp: 0.0.0.0/0
+          Description: HTTP access for simple web server
+      Tags:
+        - Key: Name
+          Value: !Sub '${StudentName}-ec2-lab-sg'
+        - Key: Student
+          Value: !Ref StudentName
+        - Key: Lab
+          Value: EC2-Basics
+        - Key: Environment
+          Value: Learning
+
+  # EC2 Instance (using default VPC and existing IAM role)
+  LabEC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: !Ref LatestAmiId
+      SecurityGroupIds:
+        - !Ref LabSecurityGroup
+      IamInstanceProfile: StudentEC2ManagedAccessProfile
+      MetadataOptions:
+        HttpTokens: required
+        HttpPutResponseHopLimit: 2
+        HttpEndpoint: enabled
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          yum update -y
+          yum install -y htop tree python3
+
+          # Install Session Manager agent (should be pre-installed on Amazon Linux 2023)
+          yum install -y amazon-ssm-agent
+          systemctl enable amazon-ssm-agent
+          systemctl start amazon-ssm-agent
+
+          echo "Welcome to ${StudentName}'s CloudFormation-deployed EC2 instance!" > /home/ec2-user/welcome.txt
+          echo "This instance uses AWS Session Manager for secure access." >> /home/ec2-user/welcome.txt
+          chown ec2-user:ec2-user /home/ec2-user/welcome.txt
+
+          # Install CloudWatch agent (optional)
+          yum install -y amazon-cloudwatch-agent
+
+          # Create a simple web server for testing with IMDSv2
+          cat > /home/ec2-user/simple-server.py << 'EOF'
+          #!/usr/bin/env python3
+          import http.server
+          import socketserver
+          import subprocess
+
+          PORT = 8000
+
+          def get_metadata_imdsv2(path):
+              try:
+                  # Get IMDSv2 token
+                  token_cmd = ['curl', '-X', 'PUT', '-H', 'X-aws-ec2-metadata-token-ttl-seconds: 21600', 
+                              'http://169.254.169.254/latest/api/token']
+                  token = subprocess.check_output(token_cmd, timeout=5).decode().strip()
+                  
+                  # Use token to get metadata
+                  metadata_cmd = ['curl', '-H', f'X-aws-ec2-metadata-token: {token}', 
+                                 f'http://169.254.169.254/latest/meta-data/{path}']
+                  return subprocess.check_output(metadata_cmd, timeout=5).decode().strip()
+              except Exception as e:
+                  return f"Unable to retrieve: {str(e)}"
+
+          class MyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
+              def do_GET(self):
+                  if self.path == '/':
+                      self.send_response(200)
+                      self.send_header('Content-type', 'text/html')
+                      self.end_headers()
+                      
+                      instance_id = get_metadata_imdsv2('instance-id')
+                      instance_type = get_metadata_imdsv2('instance-type')
+                      availability_zone = get_metadata_imdsv2('placement/availability-zone')
+                      
+                      html = f"""
+                      <html>
+                      <head>
+                          <title>${StudentName}'s EC2 Instance</title>
+                          <style>
+                              body {{ font-family: Arial, sans-serif; margin: 40px; background-color: #f5f5f5; }}
+                              .container {{ max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
+                              .header {{ background: linear-gradient(135deg, #232f3e, #4a90e2); color: white; padding: 20px; border-radius: 5px; text-align: center; }}
+                              .info-box {{ background-color: #e8f4fd; padding: 15px; margin: 20px 0; border-radius: 5px; border-left: 4px solid #4a90e2; }}
+                              .metadata-box {{ background-color: #f0f8ff; padding: 15px; margin: 20px 0; border-radius: 5px; border-left: 4px solid #28a745; }}
+                              .security-box {{ background-color: #fff3cd; padding: 15px; margin: 20px 0; border-radius: 5px; border-left: 4px solid #ffc107; }}
+                              code {{ background-color: #f8f9fa; padding: 2px 4px; border-radius: 3px; font-family: monospace; }}
+                          </style>
+                      </head>
+                      <body>
+                          <div class="container">
+                              <div class="header">
+                                  <h1>Hello from ${StudentName}'s EC2!</h1>
+                                  <p>Deployed with AWS CloudFormation</p>
+                              </div>
+                              
+                              <div class="info-box">
+                                  <h2>Instance Information</h2>
+                                  <p><strong>Student:</strong> ${StudentName}</p>
+                                  <p><strong>Access Method:</strong> AWS Session Manager</p>
+                                  <p><strong>Web Server:</strong> Auto-started Python HTTP Server</p>
+                              </div>
+                              
+                              <div class="security-box">
+                                  <h2>Security Features</h2>
+                                  <p><strong>IMDSv2:</strong> Enabled (Token-based metadata access)</p>
+                                  <p><strong>Session Manager:</strong> No SSH keys required</p>
+                                  <p><strong>IAM Role:</strong> Least privilege access</p>
+                              </div>
+                              
+                              <div class="metadata-box">
+                                  <h2>Instance Metadata (via IMDSv2)</h2>
+                                  <p><strong>Instance ID:</strong> {instance_id}</p>
+                                  <p><strong>Instance Type:</strong> {instance_type}</p>
+                                  <p><strong>Availability Zone:</strong> {availability_zone}</p>
+                              </div>
+                              
+                              <div class="info-box">
+                                  <h2>Lab Instructions</h2>
+                                  <ol>
+                                      <li>Connect via Session Manager in AWS Console</li>
+                                      <li>Explore files: <code>ls -la /home/ec2-user/</code></li>
+                                      <li>Check system info: <code>uname -a</code></li>
+                                      <li>View server code: <code>cat /home/ec2-user/simple-server.py</code></li>
+                                      <li>Manage web server: <code>./manage-webserver.sh status</code></li>
+                                  </ol>
+                              </div>
+                          </div>
+                      </body>
+                      </html>
+                      """
+                      self.wfile.write(html.encode())
+                  else:
+                      super().do_GET()
+
+          if __name__ == "__main__":
+              with socketserver.TCPServer(("", PORT), MyHTTPRequestHandler) as httpd:
+                  print(f"Server running at port {PORT}")
+                  httpd.serve_forever()
+          EOF
+
+          chmod +x /home/ec2-user/simple-server.py
+          chown ec2-user:ec2-user /home/ec2-user/simple-server.py
+
+          # Create a script to start the web server
+          cat > /home/ec2-user/start-webserver.sh << 'EOF'
+          #!/bin/bash
+          echo "Starting simple web server on port 8000..."
+          cd /home/ec2-user
+          python3 simple-server.py
+          EOF
+
+          chmod +x /home/ec2-user/start-webserver.sh
+          chown ec2-user:ec2-user /home/ec2-user/start-webserver.sh
+
+          # Create systemd service to auto-start web server
+          cat > /etc/systemd/system/simple-webserver.service << 'EOF'
+          [Unit]
+          Description=Simple Web Server for EC2 Lab
+          After=network.target
+
+          [Service]
+          Type=exec
+          User=ec2-user
+          WorkingDirectory=/home/ec2-user
+          ExecStart=/usr/bin/python3 /home/ec2-user/simple-server.py
+          Restart=always
+          RestartSec=5
+
+          [Install]
+          WantedBy=multi-user.target
+          EOF
+
+          # Enable and start the web server service
+          systemctl daemon-reload
+          systemctl enable simple-webserver.service
+          systemctl start simple-webserver.service
+
+          # Create management script for students
+          cat > /home/ec2-user/manage-webserver.sh << 'EOF'
+          #!/bin/bash
+          case "$1" in
+              start)
+                  sudo systemctl start simple-webserver.service
+                  echo "✅ Web server started"
+                  ;;
+              stop)
+                  sudo systemctl stop simple-webserver.service
+                  echo "⏹️  Web server stopped"
+                  ;;
+              restart)
+                  sudo systemctl restart simple-webserver.service
+                  echo "🔄 Web server restarted"
+                  ;;
+              status)
+                  sudo systemctl status simple-webserver.service
+                  ;;
+              logs)
+                  sudo journalctl -u simple-webserver.service -f
+                  ;;
+              *)
+                  echo "Usage: $0 {start|stop|restart|status|logs}"
+                  echo "  start   - Start the web server"
+                  echo "  stop    - Stop the web server"
+                  echo "  restart - Restart the web server"
+                  echo "  status  - Show web server status"
+                  echo "  logs    - Show web server logs"
+                  exit 1
+                  ;;
+          esac
+          EOF
+
+          chmod +x /home/ec2-user/manage-webserver.sh
+          chown ec2-user:ec2-user /home/ec2-user/manage-webserver.sh
+
+          # Log completion
+          echo "$(date): EC2 instance setup completed for ${StudentName}" >> /var/log/user-data.log
+          
+      Tags:
+        - Key: Name
+          Value: !Sub '${StudentName}-ec2-instance'
+        - Key: Student
+          Value: !Ref StudentName
+        - Key: Lab
+          Value: EC2-Basics
+        - Key: Environment
+          Value: Learning
+        - Key: Purpose
+          Value: Learning
+
+Outputs:
+  StudentName:
+    Description: Student name used for this deployment
+    Value: !Ref StudentName
+    Export:
+      Name: !Sub '${AWS::StackName}-StudentName'
+
+  InstanceId:
+    Description: EC2 Instance ID
+    Value: !Ref LabEC2Instance
+    Export:
+      Name: !Sub '${AWS::StackName}-InstanceId'
+
+  InstancePublicIP:
+    Description: Public IP address of the EC2 instance
+    Value: !GetAtt LabEC2Instance.PublicIp
+    Export:
+      Name: !Sub '${AWS::StackName}-PublicIP'
+
+  InstancePrivateIP:
+    Description: Private IP address of the EC2 instance
+    Value: !GetAtt LabEC2Instance.PrivateIp
+    Export:
+      Name: !Sub '${AWS::StackName}-PrivateIP'
+
+  SessionManagerCommand:
+    Description: AWS CLI command to connect via Session Manager
+    Value: !Sub 'aws ssm start-session --target ${LabEC2Instance}'
+
+  SessionManagerConsoleURL:
+    Description: Direct link to Session Manager in AWS Console
+    Value: !Sub 'https://${AWS::Region}.console.aws.amazon.com/systems-manager/session-manager/${LabEC2Instance}'
+
+  SecurityGroupId:
+    Description: Security Group ID
+    Value: !Ref LabSecurityGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-SecurityGroup'
+
+  WebServerURL:
+    Description: URL to test the simple web server (after starting it)
+    Value: !Sub 'http://${LabEC2Instance.PublicIp}:8000'
+
+  IAMInstanceProfile:
+    Description: IAM Instance Profile used (pre-existing)
+    Value: StudentEC2ManagedAccessProfile
+
+  ResourceNamingPattern:
+    Description: Pattern used for resource naming
+    Value: !Sub '${StudentName}-*'

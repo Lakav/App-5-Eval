@@ -1,0 +1,15 @@
+{
+  "id": { "S": "test-item-1" },
+  "name": { "S": "Premier élément de test" },
+  "status": { "S": "active" },
+  "createdAt": { "S": "2024-01-12T10:00:00Z" },
+  "metadata": {
+    "M": {
+      "category": { "S": "demo" },
+      "priority": { "N": "1" },
+      "tags": {
+        "L": [{ "S": "lambda" }, { "S": "dynamodb" }, { "S": "stream" }]
+      }
+    }
+  }
+}

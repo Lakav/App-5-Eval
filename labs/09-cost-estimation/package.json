@@ -1,0 +1,27 @@
+{
+  "name": "09-cost-estimation",
+  "version": "1.0.0",
+  "description": "AWS Cost Estimation Lab - Catalog-Snap Architecture",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"No tests for this lab - estimation exercise only\"",
+    "validate": "echo \"Please submit your architecture diagram and cost estimation\""
+  },
+  "keywords": [
+    "aws",
+    "cost-estimation",
+    "pricing",
+    "architecture",
+    "vpc",
+    "ecs",
+    "rds",
+    "s3",
+    "cloudfront"
+  ],
+  "author": "AWS Labs Repository",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-org/aws-labs-repository"
+  }
+}

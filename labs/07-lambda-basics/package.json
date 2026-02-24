@@ -1,0 +1,48 @@
+{
+  "name": "07-lambda-basics",
+  "version": "1.0.0",
+  "description": "AWS Lambda basics lab with EventBridge, S3, and DynamoDB Streams",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "package:part1": "npm run build && cd dist && zip -r s3-processor.zip s3-processor.js",
+    "build:docker": "DOCKER_BUILDKIT=0 docker build --platform linux/amd64 -t lambda-dynamodb-processor .",
+    "validate-setup": "node ../../shared/validate-setup.js"
+  },
+  "keywords": [
+    "aws",
+    "lambda",
+    "eventbridge",
+    "s3",
+    "dynamodb",
+    "streams",
+    "typescript"
+  ],
+  "author": "AWS Labs",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.130",
+    "@types/jest": "^29.5.8",
+    "@types/node": "^20.9.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.1",
+    "typescript": "^5.2.2"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.450.0",
+    "@aws-sdk/client-dynamodb": "^3.450.0",
+    "@aws-sdk/util-dynamodb": "^3.450.0"
+  },
+  "jest": {
+    "preset": "ts-jest",
+    "testEnvironment": "node",
+    "testTimeout": 30000,
+    "collectCoverageFrom": [
+      "src/**/*.ts",
+      "!src/**/*.test.ts"
+    ]
+  }
+}

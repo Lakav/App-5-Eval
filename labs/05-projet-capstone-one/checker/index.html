@@ -1,0 +1,465 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ships API - Capstone Project Checker</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 20px;
+        background-color: #f5f5f5;
+      }
+      .container {
+        background: white;
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      }
+      .config-section {
+        background: #e8f4f8;
+        padding: 15px;
+        border-radius: 5px;
+        margin-bottom: 20px;
+      }
+      input[type='text'],
+      input[type='url'] {
+        width: 100%;
+        padding: 8px;
+        margin: 5px 0;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        box-sizing: border-box;
+      }
+      button {
+        background: #007cba;
+        color: white;
+        padding: 10px 20px;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        margin: 5px;
+      }
+      button:hover {
+        background: #005a87;
+      }
+      button:disabled {
+        background: #ccc;
+        cursor: not-allowed;
+      }
+      .ship-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        gap: 20px;
+        margin-top: 20px;
+      }
+      .ship-card {
+        background: #f9f9f9;
+        padding: 15px;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      }
+      .ship-card img {
+        width: 100%;
+        height: 200px;
+        object-fit: cover;
+        border-radius: 4px;
+        margin-bottom: 10px;
+      }
+      .ship-info {
+        margin: 10px 0;
+      }
+      .ship-info strong {
+        color: #007cba;
+      }
+      .error {
+        color: #d32f2f;
+        background: #ffebee;
+        padding: 10px;
+        border-radius: 4px;
+        margin: 10px 0;
+      }
+      .success {
+        color: #2e7d32;
+        background: #e8f5e8;
+        padding: 10px;
+        border-radius: 4px;
+        margin: 10px 0;
+      }
+      .endpoint-test {
+        background: #f0f0f0;
+        padding: 15px;
+        border-radius: 5px;
+        margin: 10px 0;
+      }
+      .endpoint-test h4 {
+        margin-top: 0;
+      }
+      .test-result {
+        font-family: 'Courier New', monospace;
+        font-size: 12px;
+        background: #1e1e1e;
+        color: #00ff00;
+        padding: 10px;
+        border-radius: 4px;
+        max-height: 200px;
+        overflow-y: auto;
+        white-space: pre-wrap;
+      }
+      .loading {
+        text-align: center;
+        padding: 20px;
+        color: #666;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>🚢 Ships API - Capstone Project Checker</h1>
+
+      <div class="config-section">
+        <h3>API Configuration</h3>
+        <label for="apiUrl">API Gateway URL:</label>
+        <input
+          type="url"
+          id="apiUrl"
+          placeholder="https://your-api-id.execute-api.eu-west-1.amazonaws.com/dev"
+        />
+
+        <label for="apiKey">API Key (optional):</label>
+        <input
+          type="text"
+          id="apiKey"
+          placeholder="Leave empty if no API key is required"
+        />
+
+        <button onclick="testAllEndpoints()">Test All Endpoints</button>
+        <button onclick="loadShips()">Load Ships</button>
+      </div>
+
+      <div id="status"></div>
+
+      <div id="endpoint-tests" style="display: none">
+        <h3>📋 Endpoint Tests</h3>
+
+        <div class="endpoint-test">
+          <h4>1. GET /ships - List all ships</h4>
+          <button onclick="testGetShips()">Test Endpoint</button>
+          <div id="test-ships" class="test-result"></div>
+        </div>
+
+        <div class="endpoint-test">
+          <h4>2. GET /ships/profile/{'{key}'} - Get ship profile</h4>
+          <button onclick="testGetProfile('B-001')">Test with B-001</button>
+          <button onclick="testGetProfile('B-002')">Test with B-002</button>
+          <div id="test-profile" class="test-result"></div>
+        </div>
+
+        <div class="endpoint-test">
+          <h4>3. GET /ships/photo/{'{key}'} - Get ship photo</h4>
+          <button onclick="testGetPhoto('pecheur-b-001.jpg')">
+            Test pecheur-b-001.jpg
+          </button>
+          <button onclick="testGetPhoto('tanker-b-002.jpg')">
+            Test tanker-b-002.jpg
+          </button>
+          <div id="test-photo" class="test-result"></div>
+        </div>
+      </div>
+
+      <div>
+        <h3>🚢 Ships Gallery</h3>
+        <div id="shipsList" class="ship-grid"></div>
+      </div>
+    </div>
+
+    <script>
+      // Helper function to show status messages
+      function showStatus(message, isError = false) {
+        const statusDiv = document.getElementById('status');
+        statusDiv.innerHTML = `<div class="${isError ? 'error' : 'success'}">${message}</div>`;
+      }
+
+      // Helper function to get API configuration
+      function getApiConfig() {
+        return {
+          url: document.getElementById('apiUrl').value.replace(/\/$/, ''),
+          key: document.getElementById('apiKey').value.trim(),
+        };
+      }
+
+      // Helper function to get headers with optional API key
+      function getHeaders(config, contentType = 'application/json') {
+        const headers = {};
+        if (contentType) {
+          headers['Content-Type'] = contentType;
+        }
+        if (config.key) {
+          headers['x-api-key'] = config.key;
+        }
+        return headers;
+      }
+
+      // Test all endpoints
+      async function testAllEndpoints() {
+        const config = getApiConfig();
+        if (!config.url) {
+          showStatus('Please enter the API Gateway URL', true);
+          return;
+        }
+
+        document.getElementById('endpoint-tests').style.display = 'block';
+        showStatus('Testing all endpoints...');
+
+        await testGetShips();
+        await testGetProfile('B-001');
+        await testGetPhoto('pecheur-b-001.jpg');
+
+        showStatus('✅ All endpoint tests completed. Check results below.');
+      }
+
+      // Test GET /ships endpoint
+      async function testGetShips() {
+        const config = getApiConfig();
+        const resultDiv = document.getElementById('test-ships');
+
+        try {
+          resultDiv.textContent = 'Testing GET /ships...\n';
+
+          const response = await fetch(`${config.url}/ships`, {
+            method: 'GET',
+            headers: getHeaders(config),
+          });
+
+          resultDiv.textContent += `Status: ${response.status} ${response.statusText}\n`;
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            resultDiv.textContent += `Error: ${errorText}\n`;
+            return;
+          }
+
+          const data = await response.json();
+          resultDiv.textContent += `\nResponse:\n${JSON.stringify(data, null, 2)}\n`;
+          resultDiv.textContent += `\n✅ Success! Found ${data.ships?.length || 0} ships.\n`;
+        } catch (error) {
+          resultDiv.textContent += `\n❌ Error: ${error.message}\n`;
+        }
+      }
+
+      // Test GET /ships/profile/{key} endpoint
+      async function testGetProfile(shipId) {
+        const config = getApiConfig();
+        const resultDiv = document.getElementById('test-profile');
+
+        try {
+          resultDiv.textContent = `Testing GET /ships/profile/${shipId}...\n`;
+
+          const response = await fetch(
+            `${config.url}/ships/profile/${shipId}`,
+            {
+              method: 'GET',
+              headers: getHeaders(config),
+            }
+          );
+
+          resultDiv.textContent += `Status: ${response.status} ${response.statusText}\n`;
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            resultDiv.textContent += `Error: ${errorText}\n`;
+            return;
+          }
+
+          const data = await response.json();
+          resultDiv.textContent += `\nResponse:\n${JSON.stringify(data, null, 2)}\n`;
+          resultDiv.textContent += `\n✅ Success! Retrieved profile for ${data.nom}\n`;
+        } catch (error) {
+          resultDiv.textContent += `\n❌ Error: ${error.message}\n`;
+        }
+      }
+
+      // Test GET /ships/photo/{key} endpoint
+      async function testGetPhoto(photoKey) {
+        const config = getApiConfig();
+        const resultDiv = document.getElementById('test-photo');
+
+        try {
+          resultDiv.textContent = `Testing GET /ships/photo/${photoKey}...\n`;
+
+          const headers = {};
+          if (config.key) {
+            headers['x-api-key'] = config.key;
+          }
+
+          const response = await fetch(
+            `${config.url}/ships/photo/${photoKey}`,
+            {
+              method: 'GET',
+              headers: headers,
+            }
+          );
+
+          resultDiv.textContent += `Status: ${response.status} ${response.statusText}\n`;
+          resultDiv.textContent += `Content-Type: ${response.headers.get('content-type')}\n`;
+          resultDiv.textContent += `Content-Length: ${response.headers.get('content-length')} bytes\n`;
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            resultDiv.textContent += `Error: ${errorText}\n`;
+            return;
+          }
+
+          const blob = await response.blob();
+          resultDiv.textContent += `\nBlob size: ${blob.size} bytes\n`;
+          resultDiv.textContent += `Blob type: ${blob.type}\n`;
+
+          // Create a preview
+          const imageUrl = URL.createObjectURL(blob);
+          resultDiv.innerHTML += `<br><img src="${imageUrl}" style="max-width: 200px; border: 1px solid #ddd; border-radius: 4px;" alt="${photoKey}">`;
+          resultDiv.textContent += `\n✅ Success! Photo loaded.\n`;
+        } catch (error) {
+          resultDiv.textContent += `\n❌ Error: ${error.message}\n`;
+        }
+      }
+
+      // Load and display all ships
+      async function loadShips() {
+        const config = getApiConfig();
+        if (!config.url) {
+          showStatus('Please enter the API Gateway URL', true);
+          return;
+        }
+
+        const shipsList = document.getElementById('shipsList');
+        shipsList.innerHTML = '<div class="loading">Loading ships...</div>';
+
+        try {
+          showStatus('Loading ships...');
+
+          // Fetch all ships
+          const response = await fetch(`${config.url}/ships`, {
+            method: 'GET',
+            headers: getHeaders(config),
+          });
+
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+          }
+
+          const data = await response.json();
+          const ships = data.ships || [];
+
+          if (ships.length === 0) {
+            shipsList.innerHTML =
+              '<p>No ships found. Make sure the deployment was successful.</p>';
+            showStatus('No ships found in the database.', true);
+            return;
+          }
+
+          // Display ships
+          shipsList.innerHTML = '';
+          for (const ship of ships) {
+            await displayShip(ship, config.url, config.key);
+          }
+
+          showStatus(`✅ Successfully loaded ${ships.length} ships!`);
+        } catch (error) {
+          shipsList.innerHTML = `<div class="error">Failed to load ships: ${error.message}</div>`;
+          showStatus(`❌ Failed to load ships: ${error.message}`, true);
+        }
+      }
+
+      // Display a single ship card
+      async function displayShip(ship, apiUrl, apiKey) {
+        const shipsList = document.getElementById('shipsList');
+
+        const shipCard = document.createElement('div');
+        shipCard.className = 'ship-card';
+
+        // Create ship card HTML
+        shipCard.innerHTML = `
+                <img id="img-${ship.id}" src="" alt="${ship.nom}" style="background: #f0f0f0;">
+                <div class="ship-info">
+                    <h3>${ship.nom}</h3>
+                    <p><strong>ID:</strong> ${ship.id}</p>
+                    <p><strong>Type:</strong> ${ship.type}</p>
+                    <p><strong>Pavillon:</strong> ${ship.pavillon}</p>
+                    <p><strong>Taille:</strong> ${ship.taille} m</p>
+                    <p><strong>Marins:</strong> ${ship.nombre_marins}</p>
+                </div>
+                <button onclick="viewShipDetails('${ship.id}')">View Details</button>
+            `;
+
+        shipsList.appendChild(shipCard);
+
+        // Load ship photo
+        try {
+          const headers = {};
+          if (apiKey) {
+            headers['x-api-key'] = apiKey;
+          }
+
+          const photoResponse = await fetch(
+            `${apiUrl}/ships/photo/${ship.s3_image_key}`,
+            {
+              method: 'GET',
+              headers: headers,
+            }
+          );
+
+          if (photoResponse.ok) {
+            const blob = await photoResponse.blob();
+            const imageUrl = URL.createObjectURL(blob);
+            document.getElementById(`img-${ship.id}`).src = imageUrl;
+          } else {
+            document.getElementById(`img-${ship.id}`).alt =
+              `Photo not available`;
+            document.getElementById(`img-${ship.id}`).style.display = 'none';
+          }
+        } catch (error) {
+          console.error(`Failed to load photo for ${ship.nom}:`, error);
+        }
+      }
+
+      // View ship details (fetch from profile endpoint)
+      async function viewShipDetails(shipId) {
+        const config = getApiConfig();
+
+        try {
+          showStatus(`Loading details for ship ${shipId}...`);
+
+          const response = await fetch(
+            `${config.url}/ships/profile/${shipId}`,
+            {
+              method: 'GET',
+              headers: getHeaders(config),
+            }
+          );
+
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+          }
+
+          const ship = await response.json();
+
+          alert(`Ship Details:
+                
+ID: ${ship.id}
+Nom: ${ship.nom}
+Type: ${ship.type}
+Pavillon: ${ship.pavillon}
+Taille: ${ship.taille} m
+Nombre de marins: ${ship.nombre_marins}
+Photo: ${ship.s3_image_key}`);
+
+          showStatus(`✅ Loaded details for ${ship.nom}`);
+        } catch (error) {
+          showStatus(`❌ Failed to load ship details: ${error.message}`, true);
+        }
+      }
+    </script>
+  </body>
+</html>

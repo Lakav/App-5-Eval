@@ -1,0 +1,35 @@
+{
+  "metadata": {
+    "version": "1.0",
+    "created": "2024-01-12T10:00:00Z",
+    "description": "Données de démonstration pour le lab Lambda"
+  },
+  "students": [
+    {
+      "id": "student-001",
+      "name": "Alice Martin",
+      "email": "alice.martin@university.fr",
+      "program": "Master 2 Cloud Computing",
+      "courses": ["AWS Fundamentals", "DevOps", "Microservices"]
+    },
+    {
+      "id": "student-002",
+      "name": "Bob Dupont",
+      "email": "bob.dupont@university.fr",
+      "program": "Master 2 Cloud Computing",
+      "courses": ["AWS Fundamentals", "Security", "Containers"]
+    },
+    {
+      "id": "student-003",
+      "name": "Claire Rousseau",
+      "email": "claire.rousseau@university.fr",
+      "program": "Master 2 Cloud Computing",
+      "courses": ["AWS Fundamentals", "Data Engineering", "Machine Learning"]
+    }
+  ],
+  "statistics": {
+    "totalStudents": 3,
+    "averageCoursesPerStudent": 3,
+    "mostPopularCourse": "AWS Fundamentals"
+  }
+}

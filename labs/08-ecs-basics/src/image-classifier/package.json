@@ -1,0 +1,17 @@
+{
+  "name": "image-classifier",
+  "version": "1.0.0",
+  "description": "Image classification service using Xenova/mobilenet_v3_small",
+  "main": "classifier.js",
+  "type": "module",
+  "scripts": {
+    "start": "node classifier.js",
+    "test": "node classifier.js https://huggingface.co/datasets/Xenova/transformers.js-docs/resolve/main/tiger.jpg"
+  },
+  "dependencies": {
+    "@xenova/transformers": "^2.6.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

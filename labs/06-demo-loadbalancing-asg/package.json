@@ -1,0 +1,30 @@
+{
+  "name": "06-demo-loadbalancing-asg",
+  "version": "1.0.0",
+  "description": "Démonstration Application Load Balancer et Auto Scaling Group",
+  "scripts": {
+    "install-deps": "npm install @aws-sdk/client-ec2 @aws-sdk/client-auto-scaling @aws-sdk/client-cloudwatch @aws-sdk/client-ssm",
+    "deploy": "aws cloudformation deploy --template-file resources/infrastructure.yaml --stack-name demo-alb-asg --capabilities CAPABILITY_IAM --profile aws-labs-admin",
+    "simulate-load": "node src/simulate-load-simple.js",
+    "monitor": "npm run install-deps && node src/monitor-scaling.js",
+    "check-ssm": "node src/check-ssm-status.js",
+    "get-load-balancer-url": "aws cloudformation describe-stacks --stack-name demo-alb-asg --query 'Stacks[0].Outputs[?OutputKey==`LoadBalancerURL`].OutputValue' --output text --profile aws-labs",
+    "cleanup": "./cleanup.sh",
+    "status": "aws cloudformation describe-stacks --stack-name demo-alb-asg --query 'Stacks[0].StackStatus' --output text --profile aws-labs"
+  },
+  "keywords": [
+    "aws",
+    "load-balancer",
+    "auto-scaling",
+    "ec2",
+    "cloudformation"
+  ],
+  "author": "AWS Labs",
+  "license": "MIT",
+  "dependencies": {
+    "@aws-sdk/client-auto-scaling": "^3.965.0",
+    "@aws-sdk/client-cloudwatch": "^3.965.0",
+    "@aws-sdk/client-ec2": "^3.965.0",
+    "@aws-sdk/client-ssm": "^3.965.0"
+  }
+}

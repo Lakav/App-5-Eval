@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>S3 API Gateway Lab - Solution</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .config-section {
+            background: #e8f4f8;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        input[type="text"], input[type="url"] {
+            width: 100%;
+            padding: 8px;
+            margin: 5px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            background: #007cba;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #005a87;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .object-list {
+            margin-top: 20px;
+        }
+        .object-item {
+            background: #f9f9f9;
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 4px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .object-name {
+            font-weight: bold;
+            flex-grow: 1;
+        }
+        .object-actions {
+            display: flex;
+            gap: 5px;
+        }
+        .error {
+            color: #d32f2f;
+            background: #ffebee;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .success {
+            color: #2e7d32;
+            background: #e8f5e8;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        #preview-section {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f9f9f9;
+            border-radius: 5px;
+        }
+        #preview-content img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 4px;
+        }
+        #preview-content pre {
+            background: #f5f5f5;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+            white-space: pre-wrap;
+        }
+        .debug-section {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f0f0f0;
+            border-radius: 5px;
+            border-left: 4px solid #007cba;
+        }
+        .debug-log {
+            background: #1e1e1e;
+            color: #00ff00;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+        .debug-controls {
+            margin-bottom: 10px;
+        }
+        .debug-controls button {
+            background: #666;
+            font-size: 12px;
+            padding: 5px 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 S3 API Gateway Lab - Tester</h1>
+        
+        <div class="config-section">
+            <h3>API Configuration</h3>
+            <label for="apiUrl">API Gateway URL:</label>
+            <input type="url" id="apiUrl" placeholder="https://your-api-id.execute-api.region.amazonaws.com/dev">
+            
+            <label for="apiKey">API Key:</label>
+            <input type="text" id="apiKey" placeholder="Your API Gateway key">
+            
+            <button onclick="testConnection()">Test Connection</button>
+        </div>
+
+        <div id="status"></div>
+
+        <div>
+            <h3>S3 Bucket Contents</h3>
+            <button onclick="loadObjects()" id="loadBtn">Load Objects</button>
+            <div id="objectList" class="object-list"></div>
+        </div>
+
+        <div id="preview-section" style="display: none;">
+            <h3>File Preview</h3>
+            <button onclick="closePreview()" style="float: right;">Close</button>
+            <div id="preview-content"></div>
+        </div>
+
+        <div class="debug-section">
+            <h3>🐛 Debug Console</h3>
+            <div class="debug-controls">
+                <button onclick="clearDebugLog()">Clear Log</button>
+                <button onclick="toggleDebugDetails()">Toggle Details</button>
+                <label>
+                    <input type="checkbox" id="autoScroll" checked> Auto-scroll
+                </label>
+            </div>
+            <div id="debugLog" class="debug-log">Debug information will appear here...\n</div>
+        </div>
+    </div>
+
+    <script>
+        // Debug functionality
+        let debugDetailMode = false;
+        
+        function debugLog(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const debugDiv = document.getElementById('debugLog');
+            const typePrefix = {
+                'info': '💡',
+                'success': '✅',
+                'error': '❌',
+                'request': '📤',
+                'response': '📥',
+                'warning': '⚠️'
+            }[type] || 'ℹ️';
+            
+            const logEntry = `[${timestamp}] ${typePrefix} ${message}\n`;
+            debugDiv.textContent += logEntry;
+            
+            // Auto-scroll if enabled
+            if (document.getElementById('autoScroll').checked) {
+                debugDiv.scrollTop = debugDiv.scrollHeight;
+            }
+        }
+        
+        function clearDebugLog() {
+            document.getElementById('debugLog').textContent = 'Debug log cleared...\n';
+        }
+        
+        function toggleDebugDetails() {
+            debugDetailMode = !debugDetailMode;
+            debugLog(`Debug detail mode: ${debugDetailMode ? 'ON' : 'OFF'}`, 'info');
+        }
+        
+        // Debug function to analyze image blob
+        function debugImageBlob(blobUrl) {
+            debugLog('=== IMAGE BLOB ANALYSIS ===', 'info');
+            debugLog(`Blob URL: ${blobUrl}`, 'info');
+            
+            // Try to fetch the blob and analyze its content
+            fetch(blobUrl)
+                .then(response => response.arrayBuffer())
+                .then(buffer => {
+                    const bytes = new Uint8Array(buffer);
+                    debugLog(`Blob size: ${bytes.length} bytes`, 'info');
+                    
+                    if (bytes.length === 0) {
+                        debugLog('❌ Blob is empty!', 'error');
+                        return;
+                    }
+                    
+                    // Check file signature (magic bytes)
+                    const signature = Array.from(bytes.slice(0, 8))
+                        .map(b => b.toString(16).padStart(2, '0'))
+                        .join(' ').toUpperCase();
+                    debugLog(`File signature: ${signature}`, 'info');
+                    
+                    // Common image signatures
+                    const signatures = {
+                        'FF D8 FF': 'JPEG',
+                        '89 50 4E 47': 'PNG',
+                        '47 49 46 38': 'GIF',
+                        '42 4D': 'BMP',
+                        '52 49 46 46': 'WebP (RIFF)',
+                        '3C 73 76 67': 'SVG'
+                    };
+                    
+                    let detectedType = 'Unknown';
+                    for (const [sig, type] of Object.entries(signatures)) {
+                        if (signature.startsWith(sig)) {
+                            detectedType = type;
+                            break;
+                        }
+                    }
+                    
+                    debugLog(`Detected file type: ${detectedType}`, detectedType === 'Unknown' ? 'warning' : 'success');
+                    
+                    if (detectedType === 'Unknown') {
+                        debugLog('❌ File signature doesn\'t match known image formats', 'error');
+                        debugLog('This might be why the image isn\'t displaying', 'warning');
+                    }
+                })
+                .catch(error => {
+                    debugLog(`Error analyzing blob: ${error.message}`, 'error');
+                });
+        }
+        
+        // Enhanced fetch wrapper with debugging
+        async function debugFetch(url, options = {}) {
+            const method = options.method || 'GET';
+            debugLog(`${method} ${url}`, 'request');
+            
+            if (debugDetailMode && options.headers) {
+                debugLog(`Headers: ${JSON.stringify(options.headers, null, 2)}`, 'info');
+            }
+            
+            try {
+                const response = await fetch(url, options);
+                debugLog(`Response: ${response.status} ${response.statusText}`, 'response');
+                
+                if (debugDetailMode) {
+                    const responseHeaders = {};
+                    response.headers.forEach((value, key) => {
+                        responseHeaders[key] = value;
+                    });
+                    debugLog(`Response Headers: ${JSON.stringify(responseHeaders, null, 2)}`, 'info');
+                }
+                
+                return response;
+            } catch (error) {
+                debugLog(`Fetch Error: ${error.message}`, 'error');
+                throw error;
+            }
+        }
+        
+        // Complete implementation of all functions with debugging
+        
+        async function testConnection() {
+            const config = getApiConfig();
+            if (!config.url || !config.key) {
+                showStatus('Please enter both API URL and API Key', true);
+                debugLog('Missing API configuration', 'error');
+                return;
+            }
+            
+            try {
+                debugLog('Testing API connection...', 'info');
+                showStatus('Testing connection...');
+                
+                const response = await debugFetch(`${config.url}/objects`, {
+                    method: 'GET',
+                    headers: {
+                        'x-api-key': config.key,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (response.ok) {
+                    showStatus('✅ Connection successful! API is working correctly.');
+                    debugLog('Connection test successful', 'success');
+                } else {
+                    const errorText = await response.text();
+                    showStatus(`❌ Connection failed: ${response.status} ${response.statusText}. ${errorText}`, true);
+                    debugLog(`Connection failed: ${response.status} - ${errorText}`, 'error');
+                }
+            } catch (error) {
+                if (error.message.includes('CORS')) {
+                    showStatus('❌ CORS Error: Please ensure CORS is properly configured in API Gateway. Check the README for CORS setup instructions.', true);
+                    debugLog('CORS error detected - check API Gateway CORS configuration', 'error');
+                } else {
+                    showStatus(`❌ Connection error: ${error.message}`, true);
+                    debugLog(`Connection error: ${error.message}`, 'error');
+                }
+            }
+        }
+
+        async function loadObjects() {
+            const config = getApiConfig();
+            if (!config.url || !config.key) {
+                showStatus('Please enter both API URL and API Key', true);
+                debugLog('Missing API configuration for loadObjects', 'error');
+                return;
+            }
+            
+            try {
+                debugLog('Loading S3 objects...', 'info');
+                showStatus('Loading objects...');
+                document.getElementById('loadBtn').disabled = true;
+                
+                const response = await debugFetch(`${config.url}/objects`, {
+                    method: 'GET',
+                    headers: {
+                        'x-api-key': config.key,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const xmlText = await response.text();
+                debugLog(`Received XML response (${xmlText.length} characters)`, 'info');
+                
+                if (debugDetailMode) {
+                    debugLog(`XML Content: ${xmlText.substring(0, 500)}...`, 'info');
+                }
+                
+                const objects = parseS3ListResponse(xmlText);
+                debugLog(`Parsed ${objects.length} objects from S3 response`, 'success');
+                
+                if (objects.length === 0) {
+                    showStatus('No objects found in the S3 bucket.');
+                    document.getElementById('objectList').innerHTML = '<p>No files found. Make sure you have uploaded files to your S3 bucket.</p>';
+                    debugLog('No objects found in bucket', 'warning');
+                } else {
+                    showStatus(`✅ Found ${objects.length} objects in the bucket.`);
+                    displayObjects(objects);
+                    debugLog(`Successfully displayed ${objects.length} objects`, 'success');
+                }
+                
+            } catch (error) {
+                showStatus(`❌ Failed to load objects: ${error.message}`, true);
+                debugLog(`Failed to load objects: ${error.message}`, 'error');
+            } finally {
+                document.getElementById('loadBtn').disabled = false;
+            }
+        }
+
+        async function viewObject(key) {
+            const config = getApiConfig();
+            if (!config.url || !config.key) {
+                showStatus('Please configure API settings first', true);
+                debugLog('Missing API configuration for viewObject', 'error');
+                return;
+            }
+            
+            try {
+                debugLog(`Viewing object: ${key}`, 'info');
+                showStatus(`Loading ${key}...`);
+                
+                const response = await debugFetch(`${config.url}/objects/${encodeURIComponent(key)}`, {
+                    method: 'GET',
+                    headers: {
+                        'x-api-key': config.key
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const contentType = response.headers.get('content-type') || '';
+                const contentLength = response.headers.get('content-length') || 'unknown';
+                debugLog(`Content-Type: ${contentType}`, 'info');
+                debugLog(`Content-Length: ${contentLength}`, 'info');
+                
+                // Check for common API Gateway issues
+                if (contentType.includes('application/xml') && !key.endsWith('.xml')) {
+                    debugLog('⚠️ Warning: Received XML response for non-XML file - this might be an S3 error response', 'warning');
+                }
+                
+                if (contentLength === '0') {
+                    debugLog('⚠️ Warning: Content-Length is 0 - file might be empty or inaccessible', 'warning');
+                }
+                
+                // Better image detection - check both content-type and file extension
+                const isImage = contentType.startsWith('image/') || 
+                               key.toLowerCase().match(/\.(jpg|jpeg|png|gif|bmp|webp|svg)$/);
+                
+                debugLog(`Is image: ${isImage} (content-type: ${contentType.startsWith('image/')}, extension: ${key.toLowerCase().match(/\.(jpg|jpeg|png|gif|bmp|webp|svg)$/) !== null})`, 'info');
+                
+                const previewSection = document.getElementById('preview-section');
+                const previewContent = document.getElementById('preview-content');
+                
+                // Handle different content types
+                if (isImage) {
+                    debugLog('Handling as image content', 'info');
+                    const blob = await response.blob();
+                    debugLog(`Blob created - Size: ${blob.size} bytes, Type: ${blob.type}`, 'info');
+                    
+                    // Fix blob type if API Gateway returned wrong MIME type
+                    let correctedBlob = blob;
+                    if (blob.type !== contentType && contentType.startsWith('image/')) {
+                        debugLog(`Correcting blob type from '${blob.type}' to '${contentType}'`, 'info');
+                        correctedBlob = new Blob([blob], { type: contentType });
+                    } else if (!blob.type.startsWith('image/') && isImage) {
+                        // Guess the correct MIME type from file extension
+                        const extension = key.toLowerCase().split('.').pop();
+                        const mimeTypes = {
+                            'jpg': 'image/jpeg',
+                            'jpeg': 'image/jpeg',
+                            'png': 'image/png',
+                            'gif': 'image/gif',
+                            'bmp': 'image/bmp',
+                            'webp': 'image/webp',
+                            'svg': 'image/svg+xml'
+                        };
+                        const correctMimeType = mimeTypes[extension] || 'image/jpeg';
+                        debugLog(`API Gateway returned wrong MIME type. Correcting '${blob.type}' to '${correctMimeType}' based on file extension`, 'warning');
+                        correctedBlob = new Blob([blob], { type: correctMimeType });
+                    }
+                    
+                    // Check if blob is valid
+                    if (correctedBlob.size === 0) {
+                        debugLog('Warning: Blob size is 0 - empty response', 'warning');
+                    }
+                    
+                    const imageUrl = URL.createObjectURL(correctedBlob);
+                    debugLog(`Created image URL: ${imageUrl}`, 'info');
+                    
+                    // Add more detailed debugging for image loading
+                    previewContent.innerHTML = `
+                        <h4>Image: ${key}</h4>
+                        <div id="imageContainer">
+                            <img id="previewImage" src="${imageUrl}" alt="${key}" style="max-width: 100%; height: auto; border: 1px solid #ddd;" 
+                                 onload="
+                                     debugLog('✅ Image loaded successfully - Width: ' + this.naturalWidth + 'px, Height: ' + this.naturalHeight + 'px', 'success');
+                                     document.getElementById('imageInfo').innerHTML = 'Image loaded: ' + this.naturalWidth + ' × ' + this.naturalHeight + ' pixels';
+                                 " 
+                                 onerror="
+                                     debugLog('❌ Image failed to load. Error event triggered.', 'error');
+                                     debugLog('Image src: ' + this.src, 'error');
+                                     this.style.display='none'; 
+                                     document.getElementById('imageFallback').style.display='block';
+                                 ">
+                            <div id="imageInfo" style="font-size: 12px; color: #666; margin-top: 5px;"></div>
+                            <div id="imageFallback" style="display: none; padding: 20px; background: #f0f0f0; border: 1px solid #ddd; text-align: center;">
+                                <p>🖼️ Image preview failed</p>
+                                <p><strong>File:</strong> ${key}</p>
+                                <p><strong>Response Type:</strong> ${contentType || 'Unknown'}</p>
+                                <p><strong>Original Blob Type:</strong> ${blob.type || 'Unknown'}</p>
+                                <p><strong>Corrected Blob Type:</strong> ${correctedBlob.type || 'Unknown'}</p>
+                                <p><strong>Size:</strong> ${correctedBlob.size} bytes</p>
+                                <button onclick="downloadObject('${key.replace(/'/g, "\\'")}')">Download to View</button>
+                                <button onclick="debugImageBlob('${imageUrl}')">Debug Blob</button>
+                            </div>
+                        </div>
+                    `;
+                } else if (contentType.includes('json') || key.endsWith('.json')) {
+                    debugLog('Handling as JSON content', 'info');
+                    const text = await response.text();
+                    try {
+                        const jsonData = JSON.parse(text);
+                        previewContent.innerHTML = `
+                            <h4>JSON: ${key}</h4>
+                            <pre>${JSON.stringify(jsonData, null, 2)}</pre>
+                        `;
+                    } catch {
+                        debugLog('JSON parse failed, treating as text', 'warning');
+                        previewContent.innerHTML = `
+                            <h4>Text: ${key}</h4>
+                            <pre>${text}</pre>
+                        `;
+                    }
+                } else {
+                    debugLog('Handling as text content', 'info');
+                    const text = await response.text();
+                    previewContent.innerHTML = `
+                        <h4>Text: ${key}</h4>
+                        <pre>${text}</pre>
+                    `;
+                }
+                
+                previewSection.style.display = 'block';
+                showStatus(`✅ Loaded ${key} successfully.`);
+                debugLog(`Successfully loaded and displayed ${key}`, 'success');
+                
+            } catch (error) {
+                showStatus(`❌ Failed to view ${key}: ${error.message}`, true);
+                debugLog(`Failed to view ${key}: ${error.message}`, 'error');
+            }
+        }
+
+        async function downloadObject(key) {
+            const config = getApiConfig();
+            if (!config.url || !config.key) {
+                showStatus('Please configure API settings first', true);
+                debugLog('Missing API configuration for downloadObject', 'error');
+                return;
+            }
+            
+            try {
+                debugLog(`Downloading object: ${key}`, 'info');
+                showStatus(`Downloading ${key}...`);
+                
+                const response = await debugFetch(`${config.url}/objects/${encodeURIComponent(key)}`, {
+                    method: 'GET',
+                    headers: {
+                        'x-api-key': config.key
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const blob = await response.blob();
+                debugLog(`Downloaded blob of size: ${blob.size} bytes`, 'info');
+                
+                const url = URL.createObjectURL(blob);
+                
+                // Create download link and trigger download
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = key;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                
+                // Clean up the object URL
+                setTimeout(() => URL.revokeObjectURL(url), 100);
+                
+                showStatus(`✅ Downloaded ${key} successfully.`);
+                debugLog(`Successfully downloaded ${key}`, 'success');
+                
+            } catch (error) {
+                showStatus(`❌ Failed to download ${key}: ${error.message}`, true);
+                debugLog(`Failed to download ${key}: ${error.message}`, 'error');
+            }
+        }
+
+        // Helper function to parse S3 XML response
+        function parseS3ListResponse(xmlText) {
+            const parser = new DOMParser();
+            const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
+            
+            // Check for parsing errors
+            const parserError = xmlDoc.querySelector('parsererror');
+            if (parserError) {
+                throw new Error('Failed to parse S3 response XML');
+            }
+            
+            const contents = xmlDoc.getElementsByTagName('Contents');
+            const objects = [];
+            
+            for (let i = 0; i < contents.length; i++) {
+                const keyElement = contents[i].getElementsByTagName('Key')[0];
+                const sizeElement = contents[i].getElementsByTagName('Size')[0];
+                const lastModifiedElement = contents[i].getElementsByTagName('LastModified')[0];
+                
+                if (keyElement) {
+                    objects.push({
+                        key: keyElement.textContent,
+                        size: sizeElement ? parseInt(sizeElement.textContent) : 0,
+                        lastModified: lastModifiedElement ? lastModifiedElement.textContent : ''
+                    });
+                }
+            }
+            
+            return objects;
+        }
+
+        // Helper function to display objects in the UI
+        function displayObjects(objects) {
+            const objectList = document.getElementById('objectList');
+            
+            if (objects.length === 0) {
+                objectList.innerHTML = '<p>No objects found in the bucket.</p>';
+                return;
+            }
+            
+            objectList.innerHTML = objects.map(obj => `
+                <div class="object-item">
+                    <div class="object-name">
+                        <strong>${obj.key}</strong>
+                        <br>
+                        <small>Size: ${formatFileSize(obj.size)} | Modified: ${formatDate(obj.lastModified)}</small>
+                    </div>
+                    <div class="object-actions">
+                        <button onclick="viewObject('${obj.key.replace(/'/g, "\\'")}')">View</button>
+                        <button onclick="downloadObject('${obj.key.replace(/'/g, "\\'")}')">Download</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // Close preview section
+        function closePreview() {
+            const previewContent = document.getElementById('preview-content');
+            // Clean up any blob URLs to prevent memory leaks
+            const images = previewContent.querySelectorAll('img');
+            images.forEach(img => {
+                if (img.src.startsWith('blob:')) {
+                    URL.revokeObjectURL(img.src);
+                    debugLog('Cleaned up blob URL', 'info');
+                }
+            });
+            document.getElementById('preview-section').style.display = 'none';
+        }
+
+        // Helper function to show status messages
+        function showStatus(message, isError = false) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.innerHTML = `<div class="${isError ? 'error' : 'success'}">${message}</div>`;
+        }
+
+        // Helper function to get API configuration
+        function getApiConfig() {
+            return {
+                url: document.getElementById('apiUrl').value.replace(/\/$/, ''), // Remove trailing slash
+                key: document.getElementById('apiKey').value
+            };
+        }
+
+        // Helper function to format file size
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        // Helper function to format date
+        function formatDate(dateString) {
+            if (!dateString) return 'Unknown';
+            return new Date(dateString).toLocaleString();
+        }
+    </script>
+</body>
+</html>

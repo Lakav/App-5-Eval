@@ -1,0 +1,24 @@
+{
+  "name": "api-gateway-basics-lab",
+  "version": "1.0.0",
+  "description": "Lab 3: API Gateway Basics - Exposing S3 Content",
+  "main": "src/index.html",
+  "scripts": {
+    "serve": "python3 -m http.server 8000 --directory src",
+    "serve-solution": "python3 -m http.server 8001 --directory solutions",
+    "cleanup": "./cleanup.sh"
+  },
+  "keywords": [
+    "aws",
+    "api-gateway",
+    "s3",
+    "rest-api",
+    "education"
+  ],
+  "author": "AWS Labs Repository",
+  "license": "MIT",
+  "devDependencies": {},
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

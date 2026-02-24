@@ -1,0 +1,336 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Infrastructure de base pour le lab ECS - S3, ECR, Load Balancer (utilise le VPC par défaut)'
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: 'ecs-lab'
+    Description: 'Nom du projet pour le tagging'
+  
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: 'Sélectionnez votre VPC (utilisez le VPC par défaut pour réduire les coûts)'
+  
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: 'Sélectionnez au moins 2 subnets dans différentes zones de disponibilité'
+
+Resources:
+  # Security Groups
+  LoadBalancerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${ProjectName}-alb-sg'
+      GroupDescription: 'Security group for Application Load Balancer'
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+          Description: 'HTTP access from internet'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-alb-sg'
+        - Key: git-repository
+          Value: 'https://github.com/soraskills/develop-for-the-cloud-labs.git'
+        - Key: project
+          Value: !Ref ProjectName
+        - Key: environment
+          Value: 'development'
+        - Key: managed-by
+          Value: 'cloudformation'
+
+  ECSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${ProjectName}-ecs-sg'
+      GroupDescription: 'Security group for ECS tasks'
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3000
+          ToPort: 3000
+          SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
+          Description: 'HTTP access from Load Balancer'
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+          Description: 'HTTPS outbound for ECR and other AWS services'
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+          Description: 'All outbound traffic'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-ecs-sg'
+        - Key: git-repository
+          Value: 'https://github.com/soraskills/develop-for-the-cloud-labs.git'
+        - Key: project
+          Value: !Ref ProjectName
+        - Key: environment
+          Value: 'development'
+        - Key: managed-by
+          Value: 'cloudformation'
+
+  # Application Load Balancer
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub '${ProjectName}-alb'
+      Scheme: internet-facing
+      Type: application
+      Subnets: !Ref SubnetIds
+      SecurityGroups:
+        - !Ref LoadBalancerSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-alb'
+        - Key: git-repository
+          Value: 'https://github.com/soraskills/develop-for-the-cloud-labs.git'
+        - Key: project
+          Value: !Ref ProjectName
+        - Key: environment
+          Value: 'development'
+        - Key: managed-by
+          Value: 'cloudformation'
+
+  # Target Group
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub '${ProjectName}-tg'
+      Port: 3000
+      Protocol: HTTP
+      TargetType: ip
+      VpcId: !Ref VpcId
+      HealthCheckPath: /health
+      HealthCheckProtocol: HTTP
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-tg'
+        - Key: git-repository
+          Value: 'https://github.com/soraskills/develop-for-the-cloud-labs.git'
+        - Key: project
+          Value: !Ref ProjectName
+        - Key: environment
+          Value: 'development'
+        - Key: managed-by
+          Value: 'cloudformation'
+
+  # Listener
+  LoadBalancerListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+
+  # S3 Bucket pour les images
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ProjectName}-images-${AWS::AccountId}-${AWS::Region}'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-images-bucket'
+        - Key: git-repository
+          Value: 'https://github.com/soraskills/develop-for-the-cloud-labs.git'
+        - Key: project
+          Value: !Ref ProjectName
+        - Key: environment
+          Value: 'development'
+        - Key: managed-by
+          Value: 'cloudformation'
+
+  # ECR Repository pour l'application web
+  WebAppECRRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub '${ProjectName}/web-app'
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Keep last 10 images",
+                "selection": {
+                  "tagStatus": "any",
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 10
+                },
+                "action": {
+                  "type": "expire"
+                }
+              }
+            ]
+          }
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-web-app-ecr'
+        - Key: git-repository
+          Value: 'https://github.com/soraskills/develop-for-the-cloud-labs.git'
+        - Key: project
+          Value: !Ref ProjectName
+        - Key: environment
+          Value: 'development'
+        - Key: managed-by
+          Value: 'cloudformation'
+
+  # ECR Repository pour le classificateur d'images
+  ClassifierECRRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub '${ProjectName}/image-classifier'
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Keep last 5 images",
+                "selection": {
+                  "tagStatus": "any",
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 5
+                },
+                "action": {
+                  "type": "expire"
+                }
+              }
+            ]
+          }
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-classifier-ecr'
+        - Key: git-repository
+          Value: 'https://github.com/soraskills/develop-for-the-cloud-labs.git'
+        - Key: project
+          Value: !Ref ProjectName
+        - Key: environment
+          Value: 'development'
+        - Key: managed-by
+          Value: 'cloudformation'
+
+  # CloudWatch Log Group pour l'application web
+  WebAppLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/ecs/${ProjectName}/web-app'
+      RetentionInDays: 7
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-web-app-logs'
+        - Key: git-repository
+          Value: 'https://github.com/soraskills/develop-for-the-cloud-labs.git'
+        - Key: project
+          Value: !Ref ProjectName
+        - Key: environment
+          Value: 'development'
+        - Key: managed-by
+          Value: 'cloudformation'
+
+  # CloudWatch Log Group pour le classificateur
+  ClassifierLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/ecs/${ProjectName}/image-classifier'
+      RetentionInDays: 7
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-classifier-logs'
+        - Key: git-repository
+          Value: 'https://github.com/soraskills/develop-for-the-cloud-labs.git'
+        - Key: project
+          Value: !Ref ProjectName
+        - Key: environment
+          Value: 'development'
+        - Key: managed-by
+          Value: 'cloudformation'
+
+Outputs:
+  VPCId:
+    Description: 'VPC ID utilisé'
+    Value: !Ref VpcId
+    Export:
+      Name: !Sub '${ProjectName}-VPC-ID'
+
+  SubnetIds:
+    Description: 'Subnet IDs utilisés (comma-separated)'
+    Value: !Join [',', !Ref SubnetIds]
+    Export:
+      Name: !Sub '${ProjectName}-SubnetIds'
+
+  ECSSecurityGroup:
+    Description: 'ECS Security Group ID'
+    Value: !Ref ECSSecurityGroup
+    Export:
+      Name: !Sub '${ProjectName}-ECS-SecurityGroup-ID'
+
+  LoadBalancerSecurityGroup:
+    Description: 'Load Balancer Security Group ID'
+    Value: !Ref LoadBalancerSecurityGroup
+    Export:
+      Name: !Sub '${ProjectName}-ALB-SecurityGroup-ID'
+
+  LoadBalancerDNS:
+    Description: 'Load Balancer DNS Name'
+    Value: !GetAtt ApplicationLoadBalancer.DNSName
+    Export:
+      Name: !Sub '${ProjectName}-ALB-DNS'
+
+  TargetGroup:
+    Description: 'Target Group ARN'
+    Value: !Ref TargetGroup
+    Export:
+      Name: !Sub '${ProjectName}-TargetGroup-ARN'
+
+  S3Bucket:
+    Description: 'S3 Bucket Name'
+    Value: !Ref S3Bucket
+    Export:
+      Name: !Sub '${ProjectName}-S3Bucket-Name'
+
+  WebAppECRRepository:
+    Description: 'Web App ECR Repository URI'
+    Value: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${WebAppECRRepository}'
+    Export:
+      Name: !Sub '${ProjectName}-WebApp-ECR-URI'
+
+  ClassifierECRRepository:
+    Description: 'Classifier ECR Repository URI'
+    Value: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${ClassifierECRRepository}'
+    Export:
+      Name: !Sub '${ProjectName}-Classifier-ECR-URI'
+
+  WebAppLogGroup:
+    Description: 'Web App CloudWatch Log Group'
+    Value: !Ref WebAppLogGroup
+    Export:
+      Name: !Sub '${ProjectName}-WebApp-LogGroup'
+
+  ClassifierLogGroup:
+    Description: 'Classifier CloudWatch Log Group'
+    Value: !Ref ClassifierLogGroup
+    Export:
+      Name: !Sub '${ProjectName}-Classifier-LogGroup'

@@ -1,0 +1,20 @@
+{
+  "source": ["aws.s3"],
+  "detail-type": ["Object Created"],
+  "detail": {
+    "bucket": {
+      "name": [
+        {
+          "prefix": "lambda-basics-part1-data-"
+        }
+      ]
+    },
+    "object": {
+      "key": [
+        {
+          "suffix": ".json"
+        }
+      ]
+    }
+  }
+}
