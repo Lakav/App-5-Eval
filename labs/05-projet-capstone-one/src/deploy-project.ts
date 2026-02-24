@@ -88,6 +88,7 @@ async function deploy() {
     saveResourceState(updatedState);
 
     console.log(`✅ API Gateway ready: ${apiGateway.apiUrl}`);
+    logApiTestInfo(apiGateway.apiUrl);
     console.log('Project deployed...');
   } catch (error) {
     console.error('❌ Error:', error);
@@ -556,6 +557,20 @@ function resolveAwsAccountId(): string {
  */
 function buildApiUrl(apiId: string): string {
   return `https://${apiId}.execute-api.${AWS_REGION}.amazonaws.com/${API_STAGE_NAME}`;
+}
+
+/**
+ * Affiche les infos de test à copier/coller dans checker/index.html.
+ */
+function logApiTestInfo(apiUrl: string): void {
+  console.log('');
+  console.log('🧪 Test configuration');
+  console.log(`API Gateway URL: ${apiUrl}`);
+  console.log('API Key: not required (leave empty in checker)');
+  console.log(`GET ${apiUrl}/ships`);
+  console.log(`GET ${apiUrl}/ships/profile/B-001`);
+  console.log(`GET ${apiUrl}/ships/photo/pecheur-b-001.jpg`);
+  console.log('');
 }
 
 /**
