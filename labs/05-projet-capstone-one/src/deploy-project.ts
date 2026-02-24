@@ -11,7 +11,6 @@ import {
   CreateTableCommand,
   PutItemCommand,
   DescribeTableCommand,
-  waitUntilTableExists,
 } from '@aws-sdk/client-dynamodb';
 import {
   APIGatewayClient,
@@ -267,8 +266,10 @@ async function uploadAssets(bucketName: string, folderPath: string): Promise<voi
 async function createDynamoDBTable(tableName: string): Promise<void> {
   try {
     try {
-      await dynamoDBClient.send(new DescribeTableCommand({ TableName: tableName }));
-      console.log(`ℹ️  Table "${tableName}" already exists, skipping creation.`);
+      const describeResponse = await dynamoDBClient.send(new DescribeTableCommand({ TableName: tableName }));
+      const status = describeResponse.Table?.TableStatus;
+      console.log(`ℹ️  Table "${tableName}" already exists with status "${status || 'UNKNOWN'}".`);
+      await waitForTableActive(tableName);
       return;
     } catch (error: unknown) {
       const typedError = error as { name?: string };
@@ -286,13 +287,43 @@ async function createDynamoDBTable(tableName: string): Promise<void> {
       })
     );
 
-    console.log(`⏳ Waiting for table "${tableName}" to be active...`);
-    await waitUntilTableExists({ client: dynamoDBClient, maxWaitTime: 60 }, { TableName: tableName });
-    console.log(`✅ Table "${tableName}" is now active.`);
+    await waitForTableActive(tableName);
   } catch (error) {
     console.error('❌ Error creating DynamoDB table:', error);
     throw error;
   }
+}
+
+/**
+ * Attend explicitement l'état ACTIVE avant d'autoriser les écritures.
+ */
+async function waitForTableActive(tableName: string, timeoutMs = 120000): Promise<void> {
+  const pollDelayMs = 3000;
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < timeoutMs) {
+    try {
+      const describeResponse = await dynamoDBClient.send(new DescribeTableCommand({ TableName: tableName }));
+      const status = describeResponse.Table?.TableStatus;
+
+      if (status === 'ACTIVE') {
+        console.log(`✅ Table "${tableName}" is ACTIVE.`);
+        return;
+      }
+
+      console.log(`⏳ Table "${tableName}" status: ${status || 'UNKNOWN'}...`);
+    } catch (error: unknown) {
+      const typedError = error as { name?: string };
+      if (typedError.name !== 'ResourceNotFoundException') {
+        throw error;
+      }
+      console.log(`⏳ Table "${tableName}" not visible yet...`);
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, pollDelayMs));
+  }
+
+  throw new Error(`Timeout while waiting for table "${tableName}" to become ACTIVE.`);
 }
 
 /**
