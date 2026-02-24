@@ -193,6 +193,11 @@ async function createBucket(bucketName: string): Promise<void> {
           attempt++;
         }
       }
+    } else if (typedError.$metadata?.httpStatusCode === 403) {
+      throw new Error(
+        `Access denied on bucket "${bucketName}". This name is likely already used in another account or your session cannot access it. ` +
+          'Delete .capstone-resources.json and redeploy with a unique CAPSTONE_SUFFIX.'
+      );
     } else {
       throw error;
     }

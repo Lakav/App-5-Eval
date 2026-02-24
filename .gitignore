@@ -71,3 +71,6 @@ temp/
 
 # Husky
 .husky/_
+
+# Local deployment state
+labs/05-projet-capstone-one/.capstone-resources.json
