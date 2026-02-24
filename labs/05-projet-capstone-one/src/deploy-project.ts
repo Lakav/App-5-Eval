@@ -566,7 +566,7 @@ function logApiTestInfo(apiUrl: string): void {
   console.log('');
   console.log('🧪 Test configuration');
   console.log(`API Gateway URL: ${apiUrl}`);
-  console.log('API Key: not required (leave empty in checker)');
+  console.log('API Key: PpjllC9hAt3DwwHzcDMNW3pzegoA88CWyxGL7M4f');
   console.log(`GET ${apiUrl}/ships`);
   console.log(`GET ${apiUrl}/ships/profile/B-001`);
   console.log(`GET ${apiUrl}/ships/photo/pecheur-b-001.jpg`);
