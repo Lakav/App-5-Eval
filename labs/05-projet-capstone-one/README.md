@@ -129,6 +129,21 @@ npx ts-node src/destroy-project.ts
 
 - Le format de la table DynamoDB et les données d'exemple sont disponibles dans `labs/05-project-capstone-one/data`
 
+## Correspondance obligatoire DynamoDB <-> S3
+
+Chaque item de `data/ships.json` contient `s3_image_key`.
+Cette valeur doit être exactement le nom du fichier présent dans `assets/`.
+
+Correspondance actuelle attendue :
+
+- `B-001` -> `pecheur-b-001.jpg`
+- `B-002` -> `tanker-b-002.jpg`
+
+Important :
+
+- Si un `s3_image_key` ne correspond à aucun fichier dans `assets/`, le déploiement doit échouer.
+- Le script `src/deploy-project.ts` vérifie maintenant cette correspondance avant l'upload S3 et avant l'insertion DynamoDB.
+
 ## Grille de notation
 
 | Critère                                                                | Points |

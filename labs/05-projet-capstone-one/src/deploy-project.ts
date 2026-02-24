@@ -18,6 +18,7 @@ import {
   CreateDeploymentCommand,
   CreateResourceCommand,
   CreateRestApiCommand,
+  DeleteRestApiCommand,
   GetResourcesCommand,
   GetRestApiCommand,
   PutIntegrationCommand,
@@ -63,13 +64,16 @@ async function deploy() {
     await createBucket(resources.bucketName);
     console.log(`✅ S3 Bucket "${resources.bucketName}" ready.`);
 
+    const shipItems = loadShipItems('./data/ships.json');
+    validateShipImageKeyMapping(shipItems, './assets');
+
     await uploadAssets(resources.bucketName, './assets');
     console.log(`✅ Assets uploaded to "${resources.bucketName}".`);
 
     await createDynamoDBTable(resources.tableName);
     console.log(`✅ DynamoDB table "${resources.tableName}" ready.`);
 
-    await insertItemsFromJson(resources.tableName, './data/ships.json');
+    await insertItems(resources.tableName, shipItems);
     console.log(`✅ DynamoDB data inserted into "${resources.tableName}".`);
 
     const apiGateway = await createOrReuseApiGateway(resources);
@@ -261,11 +265,8 @@ async function createDynamoDBTable(tableName: string): Promise<void> {
   }
 }
 
-async function insertItemsFromJson(tableName: string, jsonFilePath: string): Promise<void> {
+async function insertItems(tableName: string, items: DynamoDbRawItem[]): Promise<void> {
   try {
-    const fileContent = readFileSync(jsonFilePath, 'utf-8');
-    const items = JSON.parse(fileContent) as DynamoDbRawItem[];
-
     console.log(`📝 Inserting ${items.length} item(s) into DynamoDB...`);
 
     for (const item of items) {
@@ -287,14 +288,53 @@ async function insertItemsFromJson(tableName: string, jsonFilePath: string): Pro
   }
 }
 
+function loadShipItems(jsonFilePath: string): DynamoDbRawItem[] {
+  const fileContent = readFileSync(jsonFilePath, 'utf-8');
+  return JSON.parse(fileContent) as DynamoDbRawItem[];
+}
+
+function validateShipImageKeyMapping(items: DynamoDbRawItem[], assetsFolderPath: string): void {
+  const assetFiles = new Set(readdirSync(assetsFolderPath));
+  const referencedKeys = new Set<string>();
+  const missingKeys: string[] = [];
+
+  for (const item of items) {
+    const typedItem = item as {
+      id?: { S?: string };
+      s3_image_key?: { S?: string };
+    };
+    const imageKey = typedItem.s3_image_key?.S;
+    const shipId = typedItem.id?.S || 'unknown-id';
+
+    if (!imageKey) {
+      throw new Error(`Ship ${shipId} has no s3_image_key in ships.json.`);
+    }
+
+    referencedKeys.add(imageKey);
+    if (!assetFiles.has(imageKey)) {
+      missingKeys.push(`${shipId} -> ${imageKey}`);
+    }
+  }
+
+  if (missingKeys.length > 0) {
+    throw new Error(
+      `Image mapping mismatch. Missing file(s) in assets/: ${missingKeys.join(', ')}`
+    );
+  }
+
+  const unusedAssets = [...assetFiles].filter((asset) => !referencedKeys.has(asset));
+  if (unusedAssets.length > 0) {
+    console.log(`⚠️  Unused assets found: ${unusedAssets.join(', ')}`);
+  }
+}
+
 async function createOrReuseApiGateway(resources: ResourceState): Promise<ApiGatewayDetails> {
   if (resources.apiId) {
     try {
       await apiGatewayClient.send(new GetRestApiCommand({ restApiId: resources.apiId }));
-      return {
-        apiId: resources.apiId,
-        apiUrl: buildApiUrl(resources.apiId),
-      };
+      console.log(`ℹ️  Existing API Gateway found (${resources.apiId}), deleting to recreate a clean config...`);
+      await apiGatewayClient.send(new DeleteRestApiCommand({ restApiId: resources.apiId }));
+      console.log(`✅ Old API Gateway ${resources.apiId} deleted.`);
     } catch (error: unknown) {
       const typedError = error as { name?: string };
       if (typedError.name !== 'NotFoundException') {
@@ -617,6 +657,7 @@ async function configureGetShipPhoto(
       resourceId,
       httpMethod: 'GET',
       statusCode: '200',
+      contentHandling: 'CONVERT_TO_BINARY',
       responseParameters: {
         'method.response.header.Content-Type': 'integration.response.header.Content-Type',
         'method.response.header.Access-Control-Allow-Origin': "'*'",
