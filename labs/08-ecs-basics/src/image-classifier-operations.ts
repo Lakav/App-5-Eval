@@ -1,9 +1,9 @@
 import {
   ECSClient,
-  // TODO: Décommentez les imports suivants quand vous implémentez les méthodes correspondantes
-  // RegisterTaskDefinitionCommand,
-  // RunTaskCommand,
-  // DescribeTasksCommand,
+  RegisterTaskDefinitionCommand,
+  RunTaskCommand,
+  DescribeTasksCommand,
+  StopTaskCommand,
 } from '@aws-sdk/client-ecs';
 import {
   CloudFormationClient,
@@ -11,13 +11,10 @@ import {
 } from '@aws-sdk/client-cloudformation';
 
 /**
- * Classe pour les opérations de classification d'images avec ECS
- *
- * À IMPLÉMENTER: Les étudiants doivent compléter les méthodes marquées avec TODO
+ * Solution complète pour la partie 2 du lab ECS
+ * Classification d'images avec Xenova/mobilevit-small
  */
 export class ImageClassifierOperations {
-  // TODO: Cette propriété sera utilisée dans vos implémentations
-  // @ts-ignore - Will be used by students in their implementation
   private ecsClient: ECSClient;
   private cfClient: CloudFormationClient;
   private region: string;
@@ -30,7 +27,6 @@ export class ImageClassifierOperations {
 
   /**
    * Récupère les informations depuis CloudFormation
-   * Cette méthode est déjà implémentée pour vous
    */
   async getStackOutputs(): Promise<Record<string, string>> {
     console.log('📋 Récupération des informations CloudFormation...');
@@ -87,30 +83,7 @@ export class ImageClassifierOperations {
   }
 
   /**
-   * TODO: Créer et enregistrer la task definition pour le classificateur d'images
-   *
-   * Utilisez la documentation AWS SDK v3 pour TypeScript :
-   * https://docs.aws.amazon.com/AWSJavaScriptSDK/v3/latest/client/ecs/command/RegisterTaskDefinitionCommand/
-   *
-   * La task definition doit inclure :
-   * - family: 'image-classifier'
-   * - networkMode: 'awsvpc'
-   * - requiresCompatibilities: ['FARGATE']
-   * - cpu: '1024'
-   * - memory: '2048'
-   * - executionRoleArn: le rôle d'exécution ECS
-   * - taskRoleArn: le rôle de tâche pour le classificateur
-   * - containerDefinitions avec :
-   *   - name: 'image-classifier'
-   *   - image: l'URI ECR fournie
-   *   - command: ['node', 'classifier.js'] (sera overridé lors de l'exécution)
-   *   - logConfiguration pour CloudWatch
-   *   - environment variables pour NODE_ENV
-   *
-   * @param ecrUri URI de l'image ECR
-   * @param taskRoleArn ARN du rôle de tâche
-   * @param executionRoleArn ARN du rôle d'exécution
-   * @returns ARN de la task definition créée
+   * Crée et enregistre la task definition pour le classificateur d'images
    */
   async registerImageClassifierTaskDefinition(
     ecrUri: string,
@@ -119,36 +92,75 @@ export class ImageClassifierOperations {
   ): Promise<string> {
     console.log('📝 Enregistrement de la task definition...');
 
-    // TODO: Implémentez cette méthode
-    // Créez l'objet taskDefinition avec toutes les propriétés requises
-    // Utilisez RegisterTaskDefinitionCommand pour l'enregistrer
-    // Retournez l'ARN de la task definition créée
+    try {
+      const command = new RegisterTaskDefinitionCommand({
+        family: 'image-classifier',
+        networkMode: 'awsvpc',
+        requiresCompatibilities: ['FARGATE'],
+        cpu: '1024',
+        memory: '2048',
+        executionRoleArn: executionRoleArn,
+        taskRoleArn: taskRoleArn,
+        containerDefinitions: [
+          {
+            name: 'image-classifier',
+            image: ecrUri,
+            essential: true,
+            command: ['node', 'classifier.js'],
+            logConfiguration: {
+              logDriver: 'awslogs',
+              options: {
+                'awslogs-group': '/ecs/ecs-lab/image-classifier',
+                'awslogs-region': this.region,
+                'awslogs-stream-prefix': 'ecs',
+              },
+            },
+            environment: [
+              {
+                name: 'NODE_ENV',
+                value: 'production',
+              },
+            ],
+          },
+        ],
+        tags: [
+          {
+            key: 'git-repository',
+            value:
+              'https://github.com/soraskills/develop-for-the-cloud-labs.git',
+          },
+          {
+            key: 'project',
+            value: 'ecs-lab',
+          },
+          {
+            key: 'environment',
+            value: 'development',
+          },
+          {
+            key: 'managed-by',
+            value: 'aws-sdk',
+          },
+        ],
+      });
 
-    throw new Error('Méthode à implémenter');
+      const response = await this.ecsClient.send(command);
+
+      const taskDefArn = response.taskDefinition?.taskDefinitionArn;
+      console.log(`✅ Task definition enregistrée: ${taskDefArn}`);
+
+      return taskDefArn || '';
+    } catch (error) {
+      console.error(
+        "❌ Erreur lors de l'enregistrement de la task definition:",
+        error
+      );
+      throw error;
+    }
   }
 
   /**
-   * TODO: Exécuter la tâche de classification d'images
-   *
-   * Utilisez la documentation AWS SDK v3 pour TypeScript :
-   * https://docs.aws.amazon.com/AWSJavaScriptSDK/v3/latest/client/ecs/command/RunTaskCommand/
-   *
-   * La tâche doit être configurée avec :
-   * - cluster: le nom du cluster ECS
-   * - taskDefinition: l'ARN de la task definition
-   * - launchType: 'FARGATE'
-   * - networkConfiguration avec les subnets et security groups
-   *   IMPORTANT: assignPublicIp doit être 'ENABLED' pour accéder à Internet
-   * - overrides pour passer l'URL de l'image en argument de commande :
-   *   - containerOverrides avec command: ['node', 'classifier.js', imageUrl]
-   *   (équivalent à: docker run image-classifier node classifier.js $IMAGE_URL)
-   *
-   * @param clusterName Nom du cluster ECS
-   * @param taskDefinitionArn ARN de la task definition
-   * @param subnetIds IDs des subnets
-   * @param securityGroupId ID du security group
-   * @param imageUrl URL HTTPS de l'image à classifier
-   * @returns ARN de la tâche lancée
+   * Exécute la tâche de classification d'images
    */
   async runImageClassificationTask(
     clusterName: string,
@@ -160,46 +172,181 @@ export class ImageClassifierOperations {
     console.log('🚀 Lancement de la tâche de classification...');
     console.log(`📸 Image à classifier: ${imageUrl}`);
 
-    // TODO: Implémentez cette méthode
-    // Créez la commande RunTaskCommand avec tous les paramètres
-    // Configurez les overrides pour passer la variable d'environnement IMAGE_URL
-    // IMPORTANT: Assurez-vous que assignPublicIp est 'ENABLED'
-    // Retournez l'ARN de la tâche créée
+    try {
+      const command = new RunTaskCommand({
+        cluster: clusterName,
+        taskDefinition: taskDefinitionArn,
+        launchType: 'FARGATE',
+        networkConfiguration: {
+          awsvpcConfiguration: {
+            subnets: subnetIds,
+            securityGroups: [securityGroupId],
+            assignPublicIp: 'ENABLED', // Nécessaire pour accéder à Internet (Hugging Face)
+          },
+        },
+        overrides: {
+          containerOverrides: [
+            {
+              name: 'image-classifier',
+              command: ['node', 'classifier.js', imageUrl], // Passe l'URL en argument
+            },
+          ],
+        },
+        tags: [
+          {
+            key: 'git-repository',
+            value:
+              'https://github.com/soraskills/develop-for-the-cloud-labs.git',
+          },
+          {
+            key: 'project',
+            value: 'ecs-lab',
+          },
+          {
+            key: 'environment',
+            value: 'development',
+          },
+          {
+            key: 'managed-by',
+            value: 'aws-sdk',
+          },
+        ],
+      });
 
-    throw new Error('Méthode à implémenter');
+      const response = await this.ecsClient.send(command);
+
+      if (response.tasks && response.tasks.length > 0) {
+        const task = response.tasks[0];
+        if (!task) {
+          throw new Error('Task object is undefined');
+        }
+        const taskArn = task.taskArn;
+        console.log(`✅ Tâche lancée: ${taskArn}`);
+        return taskArn || '';
+      } else {
+        throw new Error('Aucune tâche créée');
+      }
+    } catch (error) {
+      console.error('❌ Erreur lors du lancement de la tâche:', error);
+      throw error;
+    }
   }
 
   /**
-   * TODO: Surveiller l'exécution d'une tâche
-   *
-   * Utilisez la documentation AWS SDK v3 pour TypeScript :
-   * https://docs.aws.amazon.com/AWSJavaScriptSDK/v3/latest/client/ecs/command/DescribeTasksCommand/
-   *
-   * Cette méthode doit :
-   * - Vérifier périodiquement le statut de la tâche
-   * - Afficher les mises à jour de statut
-   * - Se terminer quand la tâche est STOPPED
-   * - Vérifier le code de sortie pour déterminer le succès/échec
-   *
-   * @param clusterName Nom du cluster ECS
-   * @param taskArn ARN de la tâche à surveiller
+   * Surveille l'exécution d'une tâche
    */
-  async monitorTask(_clusterName: string, _taskArn: string): Promise<void> {
+  async monitorTask(clusterName: string, taskArn: string): Promise<void> {
     console.log('👀 Surveillance de la tâche...');
 
-    // TODO: Implémentez cette méthode
-    // Utilisez une boucle pour vérifier périodiquement le statut
-    // Utilisez DescribeTasksCommand pour obtenir les détails de la tâche
-    // Attendez entre les vérifications avec setTimeout
-    // Affichez les changements de statut
+    const maxAttempts = 30; // 15 minutes maximum
+    let attempts = 0;
+    let lastStatus = '';
 
-    throw new Error('Méthode à implémenter');
+    while (attempts < maxAttempts) {
+      try {
+        const response = await this.ecsClient.send(
+          new DescribeTasksCommand({
+            cluster: clusterName,
+            tasks: [taskArn],
+          })
+        );
+
+        if (response.tasks && response.tasks.length > 0) {
+          const task = response.tasks[0];
+          if (!task) {
+            throw new Error('Task object is undefined');
+          }
+          const status = task.lastStatus;
+
+          // Affiche seulement si le statut a changé
+          if (status !== lastStatus) {
+            console.log(`📊 Status de la tâche: ${status}`);
+            lastStatus = status || '';
+          }
+
+          if (status === 'STOPPED') {
+            const exitCode = task.containers?.[0]?.exitCode;
+            const stopReason = task.stoppedReason;
+
+            if (exitCode === 0) {
+              console.log('✅ Tâche terminée avec succès!');
+              console.log(
+                '\n💡 Consultez les logs CloudWatch pour voir les résultats:'
+              );
+              console.log(
+                '   aws logs tail /ecs/ecs-lab/image-classifier --follow --profile aws-labs'
+              );
+              return;
+            } else {
+              console.log(`❌ Tâche échouée avec le code: ${exitCode}`);
+              if (stopReason) {
+                console.log(`   Raison: ${stopReason}`);
+              }
+              throw new Error(`Task failed with exit code ${exitCode}`);
+            }
+          }
+
+          if (status === 'RUNNING') {
+            console.log(
+              "🔄 Tâche en cours d'exécution... (vérification dans 30s)"
+            );
+          }
+        }
+
+        // Attendre 30 secondes avant la prochaine vérification
+        await new Promise(resolve => setTimeout(resolve, 30000));
+        attempts++;
+      } catch (error) {
+        if (error instanceof Error && error.message.includes('Task failed')) {
+          throw error;
+        }
+        console.error('❌ Erreur lors de la surveillance:', error);
+        break;
+      }
+    }
+
+    if (attempts >= maxAttempts) {
+      console.log('⏰ Timeout de surveillance atteint');
+      throw new Error('Task monitoring timeout');
+    }
+  }
+
+  /**
+   * Nettoie les ressources temporaires
+   */
+  async cleanup(clusterName: string, taskArn: string): Promise<void> {
+    console.log('🧹 Nettoyage des ressources...');
+
+    try {
+      // Vérifier si la tâche est encore en cours
+      const response = await this.ecsClient.send(
+        new DescribeTasksCommand({
+          cluster: clusterName,
+          tasks: [taskArn],
+        })
+      );
+
+      if (response.tasks && response.tasks.length > 0) {
+        const task = response.tasks[0];
+        if (task && task.lastStatus !== 'STOPPED') {
+          await this.ecsClient.send(
+            new StopTaskCommand({
+              cluster: clusterName,
+              task: taskArn,
+              reason: 'Nettoyage du lab',
+            })
+          );
+          console.log('✅ Tâche arrêtée');
+        }
+      }
+    } catch (error) {
+      console.error('❌ Erreur lors du nettoyage:', error);
+    }
   }
 }
 
 /**
- * Fonction principale pour exécuter le lab de classification d'images
- * Cette fonction est déjà implémentée et utilise vos méthodes
+ * Fonction principale pour exécuter la solution complète
  */
 export async function runImageClassificationLab(): Promise<void> {
   const classifier = new ImageClassifierOperations();
@@ -209,6 +356,9 @@ export async function runImageClassificationLab(): Promise<void> {
 
     // 1. Récupérer les informations CloudFormation
     const outputs = await classifier.getStackOutputs();
+
+    console.log('\n📋 Outputs CloudFormation disponibles:');
+    console.log(JSON.stringify(outputs, null, 2));
 
     // 2. URL de l'image à classifier (depuis Hugging Face)
     const imageUrl =
@@ -256,7 +406,6 @@ export async function runImageClassificationLab(): Promise<void> {
       );
     }
 
-    // Convertit la chaîne de subnets en tableau
     const subnetArray = subnetIds.split(',');
 
     const taskArn = await classifier.runImageClassificationTask(
@@ -267,14 +416,10 @@ export async function runImageClassificationLab(): Promise<void> {
       imageUrl
     );
 
-    // 5. Surveiller l'exécution (À IMPLÉMENTER)
+    // 5. Surveiller l'exécution
     await classifier.monitorTask('ecs-lab-cluster', taskArn);
 
     console.log("🎉 Lab de classification d'images terminé avec succès!");
-    console.log(
-      '\n💡 Consultez les logs CloudWatch pour voir les résultats de classification:'
-    );
-    console.log('   aws logs tail /ecs/ecs-lab/image-classifier --follow');
   } catch (error) {
     console.error('❌ Erreur dans le lab:', error);
     process.exit(1);
